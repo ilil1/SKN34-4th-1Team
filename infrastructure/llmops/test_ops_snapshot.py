@@ -51,9 +51,7 @@ class EncryptionTests(unittest.TestCase):
     def test_tampering_wrong_key_and_truncation_fail_before_decryption(self):
         raw = snapshot.seal(payload(), self.key)
         invalid = [raw[:-1], raw + b"x", raw[:-1] + bytes([raw[-1] ^ 1]), b"garbage"]
-        with patch.object(
-            snapshot, "crypt", side_effect=AssertionError("Must authenticate first")
-        ):
+        with patch.object(snapshot, "crypt", side_effect=AssertionError("Must authenticate first")):
             for value in invalid:
                 with self.subTest(value=len(value)), self.assertRaises(ValueError):
                     snapshot.unseal(value, self.key)
@@ -98,9 +96,7 @@ class FileTests(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 storage.validate(value)
         value = example_files()
-        value["results/run/review.json"]["data"] = base64.b64encode(
-            b"modified"
-        ).decode()
+        value["results/run/review.json"]["data"] = base64.b64encode(b"modified").decode()
         with self.assertRaisesRegex(ValueError, "integrity"):
             storage.validate(value)
 
@@ -224,15 +220,11 @@ class RetryTests(unittest.TestCase):
                 patch.object(snapshot, "inspect", side_effect=[ops, {"Id": "mysql"}]),
                 patch.object(snapshot, "preflight") as preflight,
                 patch.object(snapshot, "project_writers", return_value=["api", "sync"]),
-                patch.object(
-                    snapshot, "backup_stopped", side_effect=ValueError("copy failed")
-                ),
+                patch.object(snapshot, "backup_stopped", side_effect=ValueError("copy failed")),
                 patch.object(snapshot, "run") as command,
                 self.assertRaisesRegex(ValueError, "copy failed"),
             ):
-                snapshot.backup(
-                    "api", "mysql", Path(temporary) / "out", Path("key"), True
-                )
+                snapshot.backup("api", "mysql", Path(temporary) / "out", Path("key"), True)
             preflight.assert_called_once_with(ops, {"Id": "mysql"}, allow_running=True)
             self.assertEqual(
                 [call.args[0] for call in command.call_args_list],
@@ -248,9 +240,7 @@ class RetryTests(unittest.TestCase):
         with (
             tempfile.TemporaryDirectory() as temporary,
             patch.object(snapshot, "key_bytes"),
-            patch.object(
-                snapshot, "backup_stopped", return_value={"status": "BACKED_UP"}
-            ),
+            patch.object(snapshot, "backup_stopped", return_value={"status": "BACKED_UP"}),
             patch.object(snapshot, "run") as command,
         ):
             self.assertEqual(
@@ -273,9 +263,7 @@ class RetryTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(ValueError, "already exists"):
                     snapshot.restore(archive, Path("key"), target)
-                (target / "snapshot-state.json").write_text(
-                    json.dumps({"complete": False})
-                )
+                (target / "snapshot-state.json").write_text(json.dumps({"complete": False}))
                 with self.assertRaisesRegex(ValueError, "incomplete"):
                     snapshot.restore(archive, Path("key"), target)
                 command.assert_not_called()

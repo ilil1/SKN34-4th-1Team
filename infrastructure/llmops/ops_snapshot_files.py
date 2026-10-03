@@ -34,17 +34,12 @@ def validate(files):
         if (
             total > MAX_BYTES
             or hashlib.sha256(raw).hexdigest() != row["sha256"]
-            or any(
-                type(row[key]) is not int or row[key] < 0
-                for key in ("mode", "uid", "gid")
-            )
+            or any(type(row[key]) is not int or row[key] < 0 for key in ("mode", "uid", "gid"))
             or row["mode"] > 0o777
         ):
             raise ValueError("Snapshot file integrity check failed")
     # Reject a file used as another file's directory before touching the target.
-    if any(
-        str(parent) in files for name in files for parent in PurePosixPath(name).parents
-    ):
+    if any(str(parent) in files for name in files for parent in PurePosixPath(name).parents):
         raise ValueError("Conflicting snapshot paths")
     return files
 
@@ -59,11 +54,7 @@ def collect():
             info = path.lstat()
             if stat.S_ISDIR(info.st_mode):
                 continue
-            if (
-                not stat.S_ISREG(info.st_mode)
-                or info.st_nlink != 1
-                or info.st_mode & 0o7000
-            ):
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_mode & 0o7000:
                 raise ValueError("Links and special files cannot be backed up")
             total += info.st_size
             if total > MAX_BYTES or len(files) >= MAX_FILES:

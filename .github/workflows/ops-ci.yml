@@ -75,8 +75,8 @@ jobs:
         run: uv run --locked ruff format --check .
       - name: Check encrypted Ops snapshot tools
         run: |
-          uv run --locked ruff check ../../infrastructure/llmops/ops_snapshot.py ../../infrastructure/llmops/ops_snapshot_files.py ../../infrastructure/llmops/test_ops_snapshot.py ../../infrastructure/llmops/check_ops_snapshot.py
-          uv run --locked ruff format --check ../../infrastructure/llmops/ops_snapshot.py ../../infrastructure/llmops/ops_snapshot_files.py ../../infrastructure/llmops/test_ops_snapshot.py ../../infrastructure/llmops/check_ops_snapshot.py
+          uv run --locked ruff check --config pyproject.toml ../../infrastructure/llmops/ops_snapshot.py ../../infrastructure/llmops/ops_snapshot_files.py ../../infrastructure/llmops/test_ops_snapshot.py ../../infrastructure/llmops/check_ops_snapshot.py
+          uv run --locked ruff format --config pyproject.toml --check ../../infrastructure/llmops/ops_snapshot.py ../../infrastructure/llmops/ops_snapshot_files.py ../../infrastructure/llmops/test_ops_snapshot.py ../../infrastructure/llmops/check_ops_snapshot.py
           uv run --locked python -B -m unittest discover -s ../../infrastructure/llmops -p test_ops_snapshot.py
       - name: Check Django configuration
         run: uv run --locked python manage.py check

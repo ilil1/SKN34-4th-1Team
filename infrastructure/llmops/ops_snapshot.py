@@ -56,9 +56,7 @@ def run(args, *, data=None, env=None, timeout=180):
             args, input=data, env=env, capture_output=True, check=True, timeout=timeout
         ).stdout
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
-        raise SnapshotError(
-            "Snapshot subprocess failed (private output withheld)"
-        ) from None
+        raise SnapshotError("Snapshot subprocess failed (private output withheld)") from None
 
 
 def inspect(container):
@@ -140,9 +138,7 @@ def unseal(raw, key):
     tag, ciphertext = raw[len(MAGIC) : len(MAGIC) + 32], raw[len(MAGIC) + 32 :]
     mac_key = hmac.digest(key, b"govbiz-ops-snapshot-authentication-v1", "sha256")
     if not hmac.compare_digest(tag, hmac.digest(mac_key, MAGIC + ciphertext, "sha256")):
-        raise SnapshotError(
-            "Snapshot authentication failed; wrong key or modified backup"
-        )
+        raise SnapshotError("Snapshot authentication failed; wrong key or modified backup")
     payload = json.loads(crypt(ciphertext, key, decrypt=True))
     if payload["version"] != 1:
         raise SnapshotError("Unsupported snapshot version")
@@ -199,14 +195,10 @@ def project_writers(project):
         if service in WRITERS and any(
             environment(item).get(flag, "false").lower() != "false" for flag in FLAGS
         ):
-            raise SnapshotError(
-                "Disable live execution and scheduling in every source writer"
-            )
+            raise SnapshotError("Disable live execution and scheduling in every source writer")
         if service in WRITERS and item["State"]["Running"]:
             if item["State"].get("Paused"):
-                raise SnapshotError(
-                    "Unpause or stop existing paused writers explicitly"
-                )
+                raise SnapshotError("Unpause or stop existing paused writers explicitly")
             result.append(item["Id"])
     return result
 
@@ -222,9 +214,7 @@ def preflight(ops, mysql, *, allow_running=False):
         or db_labels.get("com.docker.compose.service") != "ops-mysql"
         or not mysql["State"]["Running"]
     ):
-        raise SnapshotError(
-            "Select the Ops API and MySQL containers of the same Compose project"
-        )
+        raise SnapshotError("Select the Ops API and MySQL containers of the same Compose project")
     config = environment(ops)
     db_config = environment(mysql)
     if (
@@ -239,9 +229,7 @@ def preflight(ops, mysql, *, allow_running=False):
             "Only disabled-live local Compose Ops with filesystem storage is supported"
         )
     if not allow_running and (ops["State"]["Running"] or project_writers(project)):
-        raise SnapshotError(
-            "Stop ops-service, ops-sync and runner before taking the snapshot"
-        )
+        raise SnapshotError("Stop ops-service, ops-sync and runner before taking the snapshot")
     database = config["DB_NAME"]
     version = sql(mysql["Id"], database, "SELECT VERSION();").decode().strip()
     if not version.startswith("8.4."):
@@ -255,9 +243,7 @@ def preflight(ops, mysql, *, allow_running=False):
         "SELECT COUNT(*) FROM evaluations_evaluationschedule WHERE paused_at IS NULL;",
     ]
     if any(sql(mysql["Id"], database, query).strip() != b"0" for query in checks):
-        raise SnapshotError(
-            "Finish evaluations/reservations and pause schedules before backup"
-        )
+        raise SnapshotError("Finish evaluations/reservations and pause schedules before backup")
     return config
 
 
@@ -325,16 +311,12 @@ def backup_stopped(ops_container, mysql_container, output, key_file):
     ops, mysql = inspect(ops_container), inspect(mysql_container)
     config = preflight(ops, mysql)
     sql_before = dump(mysql["Id"], config["DB_NAME"])
-    inventory = json.loads(
-        files(ops["Image"], ["--volumes-from", ops["Id"] + ":ro"], "collect")
-    )
+    inventory = json.loads(files(ops["Image"], ["--volumes-from", ops["Id"] + ":ro"], "collect"))
     # Re-check source service state and both stores; do not publish a mixed snapshot.
     preflight(inspect(ops["Id"]), inspect(mysql["Id"]))
     if (
         dump(mysql["Id"], config["DB_NAME"]) != sql_before
-        or json.loads(
-            files(ops["Image"], ["--volumes-from", ops["Id"] + ":ro"], "collect")
-        )
+        or json.loads(files(ops["Image"], ["--volumes-from", ops["Id"] + ":ro"], "collect"))
         != inventory
     ):
         raise SnapshotError("Source changed during backup; no backup was published")
@@ -386,8 +368,7 @@ def restore_mounts(state, readonly=False):
         )
         for part in (
             "--mount",
-            f"type=volume,src={state[name]},dst={destination}"
-            + (",readonly" if readonly else ""),
+            f"type=volume,src={state[name]},dst={destination}" + (",readonly" if readonly else ""),
         )
     ]
 
@@ -402,13 +383,9 @@ def verify_restore(directory, state, payload):
         raise SnapshotError("Restored database identity changed")
     if dump(mysql["Id"], payload["database"]) != payload["sql"]:
         raise SnapshotError("Restored DB differs from backup; nothing was overwritten")
-    actual = json.loads(
-        files(payload["ops_image"], restore_mounts(state, True), "collect")
-    )
+    actual = json.loads(files(payload["ops_image"], restore_mounts(state, True), "collect"))
     if actual != payload["files"]:
-        raise SnapshotError(
-            "Restored files differ from backup; nothing was overwritten"
-        )
+        raise SnapshotError("Restored files differ from backup; nothing was overwritten")
     return {
         "status": "VERIFIED",
         "sha256": state["sha256"],
@@ -499,10 +476,7 @@ def restore(archive, key_file, directory):
         "networks": {"default": {"internal": True}},
         "volumes": {
             "database": {"labels": {LABEL: digest}},
-            **{
-                name: {"name": state[name], "external": True}
-                for name in ("results", "evidence")
-            },
+            **{name: {"name": state[name], "external": True} for name in ("results", "evidence")},
         },
     }
     exclusive(directory / "compose.json", json.dumps(config, indent=2).encode())
@@ -553,7 +527,9 @@ def main():
     create.add_argument(
         "--stop-writers",
         action="store_true",
-        help="Temporarily stop the source Ops API/sync/runner; restart the same containers afterward",
+        help=(
+            "Temporarily stop the source Ops API/sync/runner; restart the same containers afterward"
+        ),
     )
     load = actions.add_parser("restore")
     load.add_argument("--archive", required=True, type=Path)

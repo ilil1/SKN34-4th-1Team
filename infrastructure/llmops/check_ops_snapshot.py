@@ -45,7 +45,9 @@ QualityAssessment.objects.create(
     run=run, policy={'synthetic': True}, policy_sha256='c'*64, input_sha256='d'*64,
     inputs={'case_review_id': case.pk}, status='PASS', assessed_by=user,
 )
-baseline = EvaluationBaseline.objects.create(dataset_id=run.dataset_id, version=1, review=review, selected_by=user)
+baseline = EvaluationBaseline.objects.create(
+    dataset_id=run.dataset_id, version=1, review=review, selected_by=user,
+)
 EvaluationBaselineChange.objects.create(
     baseline=baseline, version=1, review=review, changed_by=user,
     reason='가상 기준 지정', fixture_sha256='b'*64,
@@ -140,9 +142,7 @@ def main():
             timeout=600,
         )
     image = json.loads(snapshot.run(["docker", "image", "inspect", image]))[0]["Id"]
-    mysql_image = json.loads(snapshot.run(["docker", "image", "inspect", "mysql:8.4"]))[
-        0
-    ]["Id"]
+    mysql_image = json.loads(snapshot.run(["docker", "image", "inspect", "mysql:8.4"]))[0]["Id"]
     with tempfile.TemporaryDirectory(prefix="govbiz-snapshot-test-") as temporary:
         root = Path(temporary)
         source, target = root / "source", root / "target"
@@ -182,9 +182,7 @@ def main():
             result = snapshot.restore(archive, key, target)
             assert result["status"] == "RESTORED"
             assert result["sha256"] == proof["sha256"]
-            assert (
-                snapshot.restore(archive, key, target)["status"] == "ALREADY_RESTORED"
-            )
+            assert snapshot.restore(archive, key, target)["status"] == "ALREADY_RESTORED"
             assert b"application-verified" in snapshot.compose(
                 target, *base, "manage.py", "shell", "-c", VERIFY
             )
@@ -219,10 +217,11 @@ def main():
             )
             assert snapshot.dump(mysql, "snapshot_test") == before
             print(
-                "PASS: encrypted MySQL 8.4 + files + Django review/baseline/budget restore; replay/drift/source preservation; no model calls"
+                "PASS: encrypted MySQL 8.4 + files + Django review/baseline/budget restore; "
+                "replay/drift/source preservation; no model calls"
             )
         finally:
-            # All paths/resources were allocated by this invocation; no real environment is selected.
+            # Clean up only paths/resources allocated by this invocation.
             for directory in (target, source):
                 if (directory / "compose.json").is_file():
                     subprocess.run(
