@@ -1,0 +1,16 @@
+{
+  "account": "448871779288",
+  "cluster": "govbiz-eks",
+  "images": {
+    "ai-service": "448871779288.dkr.ecr.ap-southeast-2.amazonaws.com/govbiz-demo/ai-service@sha256:34d748dbac03c5a51de3d96001d32ac85e51b2b4b325e0fa5fcf95f7e0f6fce8",
+    "catalog-service": "448871779288.dkr.ecr.ap-southeast-2.amazonaws.com/govbiz-demo/catalog-service@sha256:c8f4700dad021b8ffc71d282827fee1e7166bc7e77ddff4f6b1921e612b1ea21",
+    "core-service": "448871779288.dkr.ecr.ap-southeast-2.amazonaws.com/govbiz-demo/core-service@sha256:861ee642117fadec30e149652cecca0d76b3455155ca8c89d1af009c3112db2d",
+    "evaluation-runner": "448871779288.dkr.ecr.ap-southeast-2.amazonaws.com/govbiz-demo/evaluation-runner@sha256:c8c4a69eacb1e04d7b85523d2257c3321bf156f9dedc8eb1607d6c3e1bf13874",
+    "ops-service": "448871779288.dkr.ecr.ap-southeast-2.amazonaws.com/govbiz-demo/ops-service@sha256:e51c3bb0bf25cee64223d252d892fe7dd6e5097af8bf93ff31b650f9ccd9d1ab"
+  },
+  "region": "ap-southeast-2",
+  "repository": "ilil1/SKN34-4th-1Team",
+  "schema": 1,
+  "sourceSha": "10a5b625123aa15a7f318cabbe1e382ac22d3a6b",
+  "tag": "govbiz-eks/v1.38219188700.1"
+}

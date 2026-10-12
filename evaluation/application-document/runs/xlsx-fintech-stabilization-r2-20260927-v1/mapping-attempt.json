@@ -1,8 +1,0 @@
-{
-  "sourceSha256": "c014d40d7648f8c43dd71f07a37c784fa5fa6720ae157a80364e5b39c9614517",
-  "status": "COMPLETED",
-  "maximumApiCalls": 1,
-  "authorization": "One additional official XLSX in stabilization r2",
-  "model": "gpt-5.6-luna",
-  "apiCalls": 1
-}

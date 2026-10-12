@@ -1,3 +1,0 @@
-# Captured evidence is hashed as raw bytes; preserve its committed representation.
-*.html -text !eol
-official-sources.json -text !eol
