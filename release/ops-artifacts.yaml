@@ -1,0 +1,186 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ops-artifacts
+  namespace: govbiz-evaluation
+  annotations:
+    argocd.argoproj.io/sync-wave: '-1'
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ops-artifacts
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: govbiz-msa
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ops-service
+    ports:
+    - protocol: TCP
+      port: 8010
+  egress: []
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ops-artifacts
+  namespace: govbiz-evaluation
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ops-artifacts
+  ports:
+  - name: http
+    port: 8010
+    targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ops-artifacts
+  namespace: govbiz-evaluation
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  revisionHistoryLimit: 3
+  progressDeadlineSeconds: 600
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ops-artifacts
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ops-artifacts
+        govbiz.io/evaluation-volume: shared
+      annotations:
+        govbiz.io/source-sha: 002d3882b3436a5ef9c2b886c8a8e7d8dc611918
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 120
+      nodeSelector:
+        govbiz.io/workload-pool: observability
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+      - name: evaluation-evidence
+        image: 448871779288.dkr.ecr.ap-southeast-2.amazonaws.com/govbiz-demo/evaluation-runner@sha256:6cf57848cdfa9b5104a3921083be9bc8518227cbf659a38e2d8f5dce816d1af4
+        imagePullPolicy: IfNotPresent
+        command:
+        - /app/backend/ai-service/.venv/bin/python
+        - -c
+        - "import shutil\nfrom pathlib import Path\nsource, target = Path('/app/evaluation/support-program-evidence'),\
+          \ Path('/evidence')\n# The mount root belongs to Kubernetes; only copy children\
+          \ we own.\nfor entry in source.iterdir():\n    destination = target / entry.name\n\
+          \    if entry.is_dir():\n        shutil.copytree(entry, destination, dirs_exist_ok=True)\n\
+          \    else:\n        shutil.copy2(entry, destination)\n"
+        resources:
+          limits:
+            cpu: '1'
+            memory: 1Gi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: evidence
+          mountPath: /evidence
+        - name: tmp
+          mountPath: /tmp
+      containers:
+      - name: ops-artifacts
+        image: 448871779288.dkr.ecr.ap-southeast-2.amazonaws.com/govbiz-demo/ops-service@sha256:5e59ea92b292172e3ff2136d18feb0a9f1fb0ae1f1c79daca310d30261268e59
+        imagePullPolicy: IfNotPresent
+        command:
+        - gunicorn
+        - apps.evaluations.artifact_server:create_app()
+        - --bind
+        - 0.0.0.0:8010
+        - --workers
+        - '2'
+        - --timeout
+        - '15'
+        - --worker-tmp-dir
+        - /tmp
+        - --error-logfile
+        - '-'
+        ports:
+        - name: http
+          containerPort: 8010
+        env:
+        - name: LLMOPS_RESULTS_DIR
+          value: /results
+        - name: LLMOPS_EVIDENCE_DIR
+          value: /evaluation-data
+        - name: LLMOPS_ARTIFACT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: llmops-artifacts
+              key: LLMOPS_ARTIFACT_TOKEN
+        readinessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - import json,os,urllib.request; c=urllib.request.build_opener(urllib.request.ProxyHandler({}));
+              r=urllib.request.Request('http://127.0.0.1:8010/v1/status',headers={'Authorization':'Bearer
+              '+os.environ['LLMOPS_ARTIFACT_TOKEN']}); assert json.load(c.open(r,timeout=2))['results_readable']
+              is True
+          periodSeconds: 5
+          timeoutSeconds: 3
+        resources:
+          limits:
+            cpu: '1'
+            memory: 1Gi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: data
+          mountPath: /results
+          readOnly: true
+        - name: evidence
+          mountPath: /evaluation-data
+          readOnly: true
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: results-cutover
+          readOnly: true
+      - name: tmp
+        emptyDir:
+          sizeLimit: 512Mi
+      - name: evidence
+        emptyDir:
+          sizeLimit: 128Mi
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                govbiz.io/evaluation-volume: shared
+            topologyKey: kubernetes.io/hostname

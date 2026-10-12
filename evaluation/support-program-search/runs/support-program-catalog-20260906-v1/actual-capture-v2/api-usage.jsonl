@@ -1,4 +1,0 @@
-{"event": "openai_request", "sequence": 1, "time": "2026-09-06T08:00:57.375752+00:00", "endpoint": "/v1/embeddings"}
-{"event": "openai_response", "sequence": 1, "time": "2026-09-06T08:01:00.606342+00:00", "endpoint": "/v1/embeddings", "status": 200, "model": "text-embedding-3-small", "responseStatus": null, "elapsedSeconds": 3.231, "usage": {"prompt_tokens": 69, "total_tokens": 69}, "errorCode": null}
-{"event": "openai_request", "sequence": 2, "time": "2026-09-06T08:01:00.973620+00:00", "endpoint": "/v1/responses"}
-{"event": "openai_response", "sequence": 2, "time": "2026-09-06T08:01:20.891488+00:00", "endpoint": "/v1/responses", "status": 200, "model": "gpt-5.6-luna", "responseStatus": "completed", "elapsedSeconds": 19.917, "usage": {"input_tokens": 6353, "input_tokens_details": {"cache_write_tokens": 6350, "cached_tokens": 0}, "output_tokens": 2376, "output_tokens_details": {"reasoning_tokens": 0}, "total_tokens": 8729}, "errorCode": null}
