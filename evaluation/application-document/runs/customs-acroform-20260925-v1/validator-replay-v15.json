@@ -1,9 +1,0 @@
-{
-  "sourceSha256": "dceb9ad371a121dcde82c408f511a23c14518a81af334be15965bd53829d52cf",
-  "originalRawScopeAvailable": false,
-  "reconstructedMissingScopeReason": "MAPPING_TARGET_NOT_EDITABLE_OR_OUT_OF_SCOPE",
-  "selectedTargetsFromOriginalScore": 5,
-  "canonicalBoundScopeValidator": "PASS",
-  "modelApiCalls": 0,
-  "note": "Local replay of stored target choices, not a repeat of the original OpenAI response"
-}
