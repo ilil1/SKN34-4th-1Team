@@ -1,5 +1,0 @@
-apiVersion: v2
-name: govbiz-local-data
-description: Single-node MSA storage with disposable or externally restored PVCs; not an HA database chart.
-type: application
-version: 0.2.0
