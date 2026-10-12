@@ -1,6 +1,0 @@
-<clickhouse>
-    <!-- Small local Langfuse datasets; not a production sizing recommendation. -->
-    <max_server_memory_usage>2147483648</max_server_memory_usage>
-    <mark_cache_size>134217728</mark_cache_size>
-    <memory_worker_correct_memory_tracker>1</memory_worker_correct_memory_tracker>
-</clickhouse>
