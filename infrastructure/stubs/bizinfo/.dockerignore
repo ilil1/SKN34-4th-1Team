@@ -1,4 +1,0 @@
-# 테스트 서버 실행에 필요한 두 파일만 전송합니다.
-**
-!server.py
-!response.json
