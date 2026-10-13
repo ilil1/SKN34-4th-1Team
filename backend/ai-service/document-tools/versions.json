@@ -1,6 +1,0 @@
-{
-  "hwp": {"repository": "neolord0/hwplib", "artifact": "kr.dogfoot:hwplib", "version": "1.1.11", "runtime": "core-service JVM"},
-  "hwpx": {"repository": "pblsketch/Hangeul-mcp", "commit": "b6fef153714e0cc9ce566df0da4082fc57c4fda4", "version": "0.6.0", "extension": "govbiz-ranges-v4-body-positions+answer-style-v1", "fit": "python-hwpx@6.6.0 (Apache-2.0) form_fit.measure"},
-  "pdf": {"repository": "AryanBV/pdf-edit-mcp", "commit": "d4527e62b59433ad02f31a0511db218a2eeec1d3", "version": "0.2.0", "engine": "0.2.0"},
-  "kordoc": {"repository": "chrisryugj/kordoc", "commit": "f715573df1712d415604ac949603a00e387cd3d7", "version": "4.14.0", "pdfRuntime": "pdfjs-dist@4.10.38"}
-}
