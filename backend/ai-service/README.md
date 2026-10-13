@@ -953,6 +953,13 @@ Docker의 마지막 설치 단계는 `--reinstall-package govbiz-ai-service`로 
 외부 의존성 캐시는 유지합니다. 재빌드 후에는 두 위치의 Python 파일 해시가 같은지 확인하고,
 `python -I -B`로 작업 디렉터리·`PYTHONPATH`에 기대지 않는 설치본 import도 검증해야 합니다.
 
+문서 도구의 npm 의존성 설치는 BuildKit 캐시와 `--prefer-offline`을 사용합니다. 캐시는 같은
+빌더에서 받은 패키지를 재사용하며, 새 CI 실행기에 캐시가 없더라도 잠금 파일 기반으로 설치합니다.
+`document-tools/npm-network-retry.sh`는 연결 끊김·DNS 일시 오류·시간 초과·일시적인 HTTP 오류에만
+최대 3회 시도하고 2초·4초 간격으로 재시도합니다. 요청별 다운로드 제한은 60초이며 npm 내부의
+중첩 재시도는 끕니다. 잠금 파일·인증·의존성·무결성 오류와 `npm run build` 실패는 재시도하지 않고,
+네트워크 오류도 계속되면 원래 종료 코드로 실패해 이미지 발행·배포를 차단합니다.
+
 ```bash
 uv sync --locked --extra dev
 OPENAI_API_KEY=발급받은_키 \
