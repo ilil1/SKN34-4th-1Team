@@ -1,9 +1,0 @@
-{
-  "schemaVersion": "govbiz-assistant-v1",
-  "intent": "PRODUCT_HELP",
-  "answer": "점수는 검색어와 공고의 관련도입니다. 신청 자격이나 선정 가능성을 뜻하지 않으며, 합격률은 제공하지 않습니다.",
-  "citations": ["search-score-meaning"],
-  "clarificationQuestion": null,
-  "searchQuery": null,
-  "accountTopic": null
-}
