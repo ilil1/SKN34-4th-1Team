@@ -9,6 +9,7 @@ import {
   defaultAdminAiCostPeriod,
   formatAiCostUsd,
   type AdminAiCostSummary,
+  type AdminAiCostComparison,
   type AdminAiModelPrice,
   type AiServiceTier,
   type AiUsageTotals,
@@ -41,19 +42,23 @@ export const adminAiCostMessages = {
     'reversed-period': '시작일이 종료일보다 늦어요. 기간을 다시 골라 주세요.',
     'too-long': `한 번에 ${adminAiCostMaxDays}일까지 볼 수 있어요.`,
   },
-  basis: '추정 비용은 요청마다 기록한 토큰에 그날의 가격표를 곱한 값(서울 날짜)이고, 실제 비용은 OpenAI가 알려 준 하루(UTC) 비용이에요. '
-    + 'OpenAI 집계는 몇 시간 늦게 반영될 수 있어 최근 날짜는 다음에 가져올 때 바뀔 수 있어요.',
+  basis: '비용 비교는 OpenAI에서 함께 가져온 사용량과 실제 비용을 같은 UTC 날짜로 맞춰요. 하루는 서울 오전 9시에 시작해요. '
+    + '선택된 OpenAI 프로젝트·조직 범위의 Core 밖 호출도 포함하지만, 기능·회원별 내역은 앱이 직접 기록한 호출만 보여 줘요. '
+    + 'OpenAI 집계가 늦게 반영될 수 있어, 가져온 비용은 최종 청구 금액이 아니에요.',
   actualMissingKey: 'OpenAI 조직 관리자 키(OPENAI_ADMIN_KEY)가 없어 실제 비용을 가져올 수 없어요. 프로젝트 키로는 조회되지 않아요.',
-  actualNeverFetched: '아직 실제 비용을 가져오지 않았어요.',
+  actualNeverFetched: '아직 같은 기간의 OpenAI 사용량과 실제 비용을 함께 가져오지 않았어요.',
+  comparisonIncomplete: '선택 기간에 함께 수집되지 않은 날짜가 있어 차이를 계산하지 않아요. 사용량·비용을 다시 가져와 주세요.',
+  comparisonUnpriced: '가격이나 사용량이 미확인인 호출이 있어 차이를 계산하지 않아요.',
+  currentDay: '진행 중인 UTC 날짜를 포함해요. 이후 호출과 지연 집계로 값이 바뀔 수 있어요.',
   sync: {
-    done: (lines: number, usd: string) => `실제 비용 ${lines}줄(합계 $${usd})을 가져왔어요.`,
+    done: (lines: number, usd: string) => `OpenAI 사용량과 실제 비용 ${lines}줄(합계 $${usd})을 함께 가져왔어요.`,
     'admin-key-missing': 'OpenAI 조직 관리자 키가 설정되지 않았어요.',
     'admin-key-rejected': 'OpenAI가 관리자 키를 거절했어요. 조직 관리자 키인지 확인해 주세요.',
-    unavailable: 'OpenAI 비용을 지금 가져오지 못했어요. 기존 값은 그대로 두었어요.',
-    failed: '실제 비용을 가져오지 못했어요. 잠시 후 다시 시도해 주세요.',
+    unavailable: 'OpenAI 사용량·비용을 함께 가져오지 못했어요. 기존 값은 그대로 두었어요.',
+    failed: '사용량·비용을 가져오지 못했어요. 잠시 후 다시 시도해 주세요.',
   },
   price: {
-    added: '가격을 더했어요. 시작일부터 새 요청에 적용해요.',
+    added: '가격을 더했어요. UTC 시작일부터 새 앱 요청에 적용해요. OpenAI 사용량은 다음 동기화에서 다시 계산해요.',
     conflict: '같은 모델·처리 등급·시작일의 가격이 이미 있어요.',
     invalid: '모델 이름(소문자)·처리 등급·0 이상의 가격·시작일을 확인해 주세요.',
     failed: '가격을 더하지 못했어요. 잠시 후 다시 시도해 주세요.',
@@ -65,35 +70,57 @@ type PriceForm = {
   serviceTier: AiServiceTier
   inputUsdPerMillion: string
   cachedInputUsdPerMillion: string
+  cacheWriteInputUsdPerMillion: string
+  cacheWrite12hInputUsdPerMillion: string
   outputUsdPerMillion: string
   effectiveFrom: string
   note: string
 }
 
 const emptyPriceForm = (today: string): PriceForm => ({
-  modelPrefix: '', serviceTier: 'default', inputUsdPerMillion: '', cachedInputUsdPerMillion: '', outputUsdPerMillion: '', effectiveFrom: today, note: '',
+  modelPrefix: '', serviceTier: 'default', inputUsdPerMillion: '', cachedInputUsdPerMillion: '',
+  cacheWriteInputUsdPerMillion: '', cacheWrite12hInputUsdPerMillion: '', outputUsdPerMillion: '', effectiveFrom: today, note: '',
 })
 
 function tokens(totals: AiUsageTotals): string {
-  const cached = totals.cachedInputTokens > 0 ? ` (캐시 ${totals.cachedInputTokens.toLocaleString('ko-KR')})` : ''
-  return `입력 ${totals.inputTokens.toLocaleString('ko-KR')}${cached} · 출력 ${totals.outputTokens.toLocaleString('ko-KR')}`
+  const cacheWrites = totals.cacheWriteInputTokens === null || totals.cacheWrite12hInputTokens === null
+    ? '캐시 쓰기 미확인'
+    : `캐시 쓰기 ${totals.cacheWriteInputTokens.toLocaleString('ko-KR')} · 12시간 쓰기 ${totals.cacheWrite12hInputTokens.toLocaleString('ko-KR')}`
+  return `입력 ${totals.inputTokens.toLocaleString('ko-KR')} (캐시 읽기 ${totals.cachedInputTokens.toLocaleString('ko-KR')} · ${cacheWrites})`
+    + ` · 출력 ${totals.outputTokens.toLocaleString('ko-KR')}`
 }
 
 function unpriced(totals: AiUsageTotals): string | null {
-  return totals.unpricedCalls > 0 ? `가격 없는 호출 ${totals.unpricedCalls}회 제외` : null
+  const notes = [
+    totals.unpricedCalls > 0 ? `비용 미확정 호출 ${totals.unpricedCalls}회 제외` : null,
+    totals.incompleteUsageCalls > 0 ? `사용량 미확인 ${totals.incompleteUsageCalls}회` : null,
+  ].filter(Boolean)
+  return notes.length > 0 ? notes.join(' · ') : null
 }
 
-/** 추정과 실제의 차이입니다. 실제 비용이 없으면 null입니다. */
-function difference(summary: AdminAiCostSummary): string | null {
-  if (summary.actualUsd === null) return null
-  const diff = Number(summary.actualUsd) - Number(summary.totals.estimatedUsd)
+function estimatedCost(totals: AiUsageTotals, rate: string | null = null): string {
+  if (totals.calls > 0 && (totals.unpricedCalls === totals.calls || totals.incompleteUsageCalls === totals.calls)) return '미확정'
+  return formatAiCostUsd(totals.estimatedUsd, rate)
+}
+
+function estimatedCostWithNote(totals: AiUsageTotals, rate: string | null = null): string {
+  const cost = estimatedCost(totals, rate)
+  const note = unpriced(totals)
+  return note === null ? cost : `${cost} · ${note}`
+}
+
+/** 동일 기간의 제공처 스냅샷에서 모든 금액을 계산할 수 있을 때만 차이를 보입니다. */
+function difference(comparison: AdminAiCostComparison | null): string | null {
+  if (comparison?.status !== 'ready' || comparison.actualUsd === null || comparison.totals === null
+    || comparison.totals.unpricedCalls > 0 || comparison.totals.incompleteUsageCalls > 0) return null
+  const diff = Number(comparison.actualUsd) - Number(comparison.totals.estimatedUsd)
   const sign = diff >= 0 ? '+' : '-'
   return `${sign}$${Math.abs(diff).toFixed(6)}`
 }
 
 /**
- * 관리자 AI 비용 화면의 대표 ViewModel입니다. 기간(서울 날짜)의 추정·실제 비용 요약, 기능·모델·날짜·회원별 합계, 가격표와 가격 추가,
- * 실제 비용 가져오기를 맡습니다. 세션이 끝났으면(401) 로그인 상태를 비우고, 권한이 없으면(403) 권한 안내를 보여 줍니다.
+ * 관리자 AI 비용 화면의 대표 ViewModel입니다. 기간(UTC 날짜)의 제공처 비용 비교, 앱 기능·모델·회원별 합계, 가격표와 가격 추가,
+ * 사용량·비용 동기화를 맡습니다. 세션이 끝났으면(401) 로그인 상태를 비우고, 권한이 없으면(403) 권한 안내를 보여 줍니다.
  */
 export function useAdminAiCostViewModel(useCases: Partial<UseCases> = {}, now: () => number = Date.now) {
   const [resolved] = useState<UseCases>(() => ({
@@ -200,6 +227,8 @@ export function useAdminAiCostViewModel(useCases: Partial<UseCases> = {}, now: (
         serviceTier: values.serviceTier,
         inputUsdPerMillion: values.inputUsdPerMillion.trim(),
         cachedInputUsdPerMillion: values.cachedInputUsdPerMillion.trim() || null,
+        cacheWriteInputUsdPerMillion: values.cacheWriteInputUsdPerMillion.trim() || null,
+        cacheWrite12hInputUsdPerMillion: values.cacheWrite12hInputUsdPerMillion.trim() || null,
         outputUsdPerMillion: values.outputUsdPerMillion.trim(),
         effectiveFrom: values.effectiveFrom,
         note: values.note,
@@ -226,12 +255,23 @@ export function useAdminAiCostViewModel(useCases: Partial<UseCases> = {}, now: (
   }
 
   const rate = summary?.krwPerUsd ?? null
+  const comparison = summary?.comparison ?? null
+  const comparisonTotals = comparison?.totals ?? null
+  const comparisonNote = comparison === null || comparison.status === 'not-synced'
+    ? summary?.actualConfigured ? adminAiCostMessages.actualNeverFetched : adminAiCostMessages.actualMissingKey
+    : comparison.status === 'incomplete' ? adminAiCostMessages.comparisonIncomplete
+      : comparisonTotals !== null && (comparisonTotals.unpricedCalls > 0 || comparisonTotals.incompleteUsageCalls > 0)
+        ? adminAiCostMessages.comparisonUnpriced : null
   return {
     phase,
     retry: () => setVersion((value) => value + 1),
     notice,
     dismissNotice: () => setNotice(null),
     basis: adminAiCostMessages.basis,
+    comparisonNote,
+    comparisonPeriod: comparison === null ? null : `${comparison.from} ~ ${comparison.to} · UTC`,
+    currentDayNote: comparison?.includesCurrentDay ? adminAiCostMessages.currentDay : null,
+    applicationTitle: comparison === null ? '앱에서 기록한 사용량 · 서버 집계 기준' : '앱에서 기록한 사용량 · UTC',
     form: {
       values: form,
       updateFrom: (value: string) => { setForm((current) => ({ ...current, from: value })); setFormError(null) },
@@ -240,16 +280,18 @@ export function useAdminAiCostViewModel(useCases: Partial<UseCases> = {}, now: (
       error: formError,
     },
     stats: summary === null ? [] : [
-      { label: '추정 비용', value: formatAiCostUsd(summary.totals.estimatedUsd, rate), note: unpriced(summary.totals) },
+      { label: '추정 비용(OpenAI 사용량)', value: comparisonTotals === null ? '—' : estimatedCost(comparisonTotals, rate), note: comparisonTotals === null ? null : unpriced(comparisonTotals) },
       {
         label: '실제 비용(OpenAI)',
-        value: summary.actualUsd === null ? '없음' : formatAiCostUsd(summary.actualUsd, rate),
-        note: summary.actualUsd !== null
-          ? (summary.actualFetchedAt === null ? null : `${formatAdminDateTime(summary.actualFetchedAt)} 가져옴`)
-          : summary.actualConfigured ? adminAiCostMessages.actualNeverFetched : adminAiCostMessages.actualMissingKey,
+        value: comparison?.actualUsd == null ? '—' : formatAiCostUsd(comparison.actualUsd, rate),
+        note: comparison?.fetchedAt == null ? null : `${formatAdminDateTime(comparison.fetchedAt)} UTC 함께 가져옴`,
       },
-      { label: '차이(실제 − 추정)', value: difference(summary) ?? '—', note: null },
-      { label: 'AI 호출', value: `${summary.totals.calls.toLocaleString('ko-KR')}회`, note: tokens(summary.totals) },
+      { label: '차이(실제 − 추정)', value: difference(comparison) ?? '—', note: null },
+      { label: 'OpenAI 호출', value: comparisonTotals === null ? '—' : `${comparisonTotals.calls.toLocaleString('ko-KR')}회`, note: comparisonTotals === null ? null : tokens(comparisonTotals) },
+    ],
+    applicationStats: summary === null ? [] : [
+      { label: '앱 기록 추정 비용', value: estimatedCost(summary.totals, rate), note: unpriced(summary.totals) },
+      { label: '앱 기록 호출', value: `${summary.totals.calls.toLocaleString('ko-KR')}회`, note: tokens(summary.totals) },
     ],
     sync: {
       configured: summary?.actualConfigured ?? false,
@@ -261,7 +303,7 @@ export function useAdminAiCostViewModel(useCases: Partial<UseCases> = {}, now: (
       label: aiUsageFeatureLabel(group.key),
       calls: `${group.totals.calls.toLocaleString('ko-KR')}회`,
       tokens: tokens(group.totals),
-      cost: formatAiCostUsd(group.totals.estimatedUsd, rate),
+      cost: estimatedCost(group.totals, rate),
       note: unpriced(group.totals),
     })),
     byModel: (summary?.byModel ?? []).map((group) => ({
@@ -270,13 +312,13 @@ export function useAdminAiCostViewModel(useCases: Partial<UseCases> = {}, now: (
       tier: group.serviceTier in aiServiceTierLabels ? aiServiceTierLabels[group.serviceTier as AiServiceTier] : group.serviceTier,
       calls: `${group.totals.calls.toLocaleString('ko-KR')}회`,
       tokens: tokens(group.totals),
-      cost: group.totals.unpricedCalls === group.totals.calls ? '가격 없음' : formatAiCostUsd(group.totals.estimatedUsd, rate),
+      cost: estimatedCostWithNote(group.totals, rate),
     })),
-    days: (summary?.days ?? []).filter((day) => day.calls > 0 || day.actualUsd !== null)
+    days: (comparison?.days ?? []).filter((day) => day.totals.calls > 0 || day.actualUsd !== null)
       .sort((left, right) => right.date.localeCompare(left.date)).map((day) => ({
       date: day.date,
-      calls: `${day.calls.toLocaleString('ko-KR')}회`,
-      estimated: formatAiCostUsd(day.estimatedUsd),
+      calls: `${day.totals.calls.toLocaleString('ko-KR')}회`,
+      estimated: estimatedCostWithNote(day.totals),
       actual: day.actualUsd === null ? '—' : formatAiCostUsd(day.actualUsd),
     })),
     topAccounts: (summary?.topAccounts ?? []).map((account) => ({
@@ -285,7 +327,7 @@ export function useAdminAiCostViewModel(useCases: Partial<UseCases> = {}, now: (
       path: `${appPaths.adminAccountDetail}?accountId=${account.accountId}`,
       plan: account.planCode !== null && account.planCode in planLabels ? planLabels[account.planCode as PlanCode] : '무료',
       calls: `${account.totals.calls.toLocaleString('ko-KR')}회`,
-      cost: formatAiCostUsd(account.totals.estimatedUsd, rate),
+      cost: estimatedCostWithNote(account.totals, rate),
     })),
     prices: prices.map((price) => ({
       id: price.id,
@@ -293,6 +335,8 @@ export function useAdminAiCostViewModel(useCases: Partial<UseCases> = {}, now: (
       tier: aiServiceTierLabels[price.serviceTier],
       input: `$${price.inputUsdPerMillion}`,
       cached: price.cachedInputUsdPerMillion === null ? '—' : `$${price.cachedInputUsdPerMillion}`,
+      cacheWrite: price.cacheWriteInputUsdPerMillion === null ? '미등록' : `$${price.cacheWriteInputUsdPerMillion}`,
+      cacheWrite12h: price.cacheWrite12hInputUsdPerMillion === null ? '미등록' : `$${price.cacheWrite12hInputUsdPerMillion}`,
       output: `$${price.outputUsdPerMillion}`,
       effectiveFrom: price.effectiveFrom,
       note: price.note ?? '',

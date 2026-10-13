@@ -14,19 +14,35 @@ export type AiUsageFeature =
 /** 응답의 처리 등급입니다. Fast 모드는 응답에서 priority로 옵니다. */
 export type AiServiceTier = 'default' | 'priority' | 'flex'
 
-/** 기간 합계입니다. 금액은 소수 6자리 USD 문자열이고, 가격표에 없는 호출(unpricedCalls)은 금액에 들어가지 않습니다. */
+/** 기간 합계입니다. 금액은 소수 6자리 USD이고 비용 미확정 호출은 제외됩니다. null인 쓰기 토큰은 미확인이며 0이 아닙니다. */
 export type AiUsageTotals = {
   calls: number
   inputTokens: number
   cachedInputTokens: number
+  cacheWriteInputTokens: number | null
+  cacheWrite12hInputTokens: number | null
   outputTokens: number
   estimatedUsd: string
   unpricedCalls: number
+  incompleteUsageCalls: number
+}
+
+/** 같은 조회에서 수집한 OpenAI 사용량·비용입니다. ready여도 제공처의 지연 집계로 이후 금액이 달라질 수 있습니다. */
+export type AdminAiCostComparison = {
+  timezone: 'UTC'
+  from: string
+  to: string
+  fetchedAt: string | null
+  status: 'not-synced' | 'incomplete' | 'ready'
+  includesCurrentDay: boolean
+  totals: AiUsageTotals | null
+  actualUsd: string | null
+  days: { date: string; totals: AiUsageTotals; actualUsd: string | null }[]
 }
 
 /**
- * 관리자 AI 비용 화면의 한 기간입니다. 추정은 서울 날짜, 실제는 OpenAI 하루(UTC) 기준입니다. actualUsd는 실제 비용을 한 번도
- * 가져오지 않았으면 null이고, actualConfigured는 서버에 OpenAI 조직 관리자 키가 있는지입니다. krwPerUsd는 운영자가 정한 환율입니다.
+ * 관리자 AI 비용 화면의 UTC 기간입니다. totals·그룹은 앱이 직접 기록한 사용량이며, 비교에는 comparison만 사용합니다.
+ * comparison이 없으면 이전 서버 응답입니다. actualConfigured는 조직 관리자 키 설정 여부, krwPerUsd는 운영자 환율입니다.
  */
 export type AdminAiCostSummary = {
   from: string
@@ -36,19 +52,22 @@ export type AdminAiCostSummary = {
   actualConfigured: boolean
   actualFetchedAt: string | null
   krwPerUsd: string | null
+  comparison: AdminAiCostComparison | null
   byFeature: { key: string | null; totals: AiUsageTotals }[]
   byModel: { key: string; serviceTier: string; totals: AiUsageTotals }[]
   days: { date: string; estimatedUsd: string; calls: number; actualUsd: string | null }[]
   topAccounts: { accountId: number; email: string; planCode: string | null; totals: AiUsageTotals }[]
 }
 
-/** 1M 토큰당 USD 가격입니다. 캐시 입력 가격이 없으면 입력 가격으로 계산합니다. */
+/** 1M 토큰당 USD 가격입니다. 캐시 읽기 가격은 입력 가격으로 보완하지만 쓰기 가격이 없으면 쓰기 비용을 확정하지 않습니다. */
 export type AdminAiModelPrice = {
   id: number
   modelPrefix: string
   serviceTier: AiServiceTier
   inputUsdPerMillion: string
   cachedInputUsdPerMillion: string | null
+  cacheWriteInputUsdPerMillion: string | null
+  cacheWrite12hInputUsdPerMillion: string | null
   outputUsdPerMillion: string
   effectiveFrom: string
   note: string | null
@@ -82,8 +101,8 @@ export function formatAiCostUsd(usd: string, krwPerUsd: string | null = null): s
   return `$${usd} (약 ${won.toLocaleString('ko-KR')}원)`
 }
 
-/** 서울 기준 이번 달 1일부터 오늘까지입니다. */
+/** UTC 기준 이번 달 1일부터 오늘까지입니다. */
 export function defaultAdminAiCostPeriod(now: number = Date.now()): { from: string; to: string } {
-  const today = new Date(now + 9 * 3_600_000).toISOString().slice(0, 10)
+  const today = new Date(now).toISOString().slice(0, 10)
   return { from: `${today.slice(0, 8)}01`, to: today }
 }

@@ -6,13 +6,13 @@ from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from openai import AsyncOpenAI
 
-from app.openai_usage import USAGE_HEADER, OpenAIUsageMiddleware, record_openai_usage, usage_of
+from app.openai_usage import USAGE_HEADER, OpenAIUsageMiddleware, record_openai_usage, usage_header, usage_of
 
 RESPONSE = {
     "id": "resp_1", "object": "response", "created_at": 1, "status": "completed", "model": "gpt-5.6-luna-2026-07-30",
     "service_tier": "priority", "output": [], "parallel_tool_calls": False, "tool_choice": "auto", "tools": [],
     "usage": {
-        "input_tokens": 1200, "input_tokens_details": {"cached_tokens": 1000},
+        "input_tokens": 1200, "input_tokens_details": {"cached_tokens": 1000, "cache_write_tokens": 200},
         "output_tokens": 80, "output_tokens_details": {"reasoning_tokens": 30}, "total_tokens": 1280,
     },
 }
@@ -60,9 +60,11 @@ def test_each_request_reports_the_openai_usage_it_spent_by_model_and_tier() -> N
     assert response.status_code == 200
     assert json.loads(response.headers[USAGE_HEADER]) == [
         {"model": "gpt-5.6-luna-2026-07-30", "serviceTier": "priority", "calls": 2,
-         "inputTokens": 2400, "cachedInputTokens": 2000, "outputTokens": 160},
+         "inputTokens": 2400, "cachedInputTokens": 2000, "outputTokens": 160,
+         "cacheWriteInputTokens": 400, "cacheWrite12hInputTokens": 0},
         {"model": "text-embedding-3-small", "serviceTier": "default", "calls": 1,
-         "inputTokens": 42, "cachedInputTokens": 0, "outputTokens": 0},
+         "inputTokens": 42, "cachedInputTokens": 0, "outputTokens": 0,
+         "cacheWriteInputTokens": 0, "cacheWrite12hInputTokens": 0},
     ]
     # OpenAI를 부르지 않은 요청은 헤더가 없다.
     assert USAGE_HEADER not in health.headers
@@ -100,5 +102,90 @@ def test_malformed_usage_is_unknown_rather_than_zero(body: object) -> None:
 
 def test_chat_completions_usage_is_read_too() -> None:
     assert usage_of({
-        "model": "gpt-5-nano", "usage": {"prompt_tokens": 50, "completion_tokens": 7, "prompt_tokens_details": {"cached_tokens": 60}},
-    }) == {"model": "gpt-5-nano", "serviceTier": "default", "inputTokens": 50, "cachedInputTokens": 50, "outputTokens": 7}
+        "model": "gpt-5-nano", "usage": {"prompt_tokens": 50, "completion_tokens": 7, "prompt_tokens_details": {"cached_tokens": 20}},
+    }) == {"model": "gpt-5-nano", "serviceTier": "default", "inputTokens": 50, "cachedInputTokens": 20, "outputTokens": 7,
+           "cacheWriteInputTokens": None, "cacheWrite12hInputTokens": None}
+
+
+def test_chat_cache_writes_are_a_subset_of_input_tokens() -> None:
+    assert usage_of({
+        "model": "gpt-6-luna", "usage": {
+            "prompt_tokens": 1200, "completion_tokens": 7,
+            "prompt_tokens_details": {"cached_tokens": 1000, "cache_write_tokens": 150},
+        },
+    }) == {"model": "gpt-6-luna", "serviceTier": "default", "inputTokens": 1200,
+           "cachedInputTokens": 1000, "cacheWriteInputTokens": 150, "cacheWrite12hInputTokens": 0, "outputTokens": 7}
+
+
+@pytest.mark.parametrize("details", [
+    {}, {"cached_tokens": 1}, {"cached_tokens": 1, "cache_write_tokens": None},
+])
+def test_missing_cache_writes_are_not_reported_as_zero(details: dict[str, int | None]) -> None:
+    call = usage_of({"model": "gpt-6-luna", "usage": {"input_tokens": 20, "input_tokens_details": details}})
+    assert call is not None
+    assert call["cacheWriteInputTokens"] is None
+    assert call["cacheWrite12hInputTokens"] is None
+
+
+@pytest.mark.parametrize("cache_write", [-1, True, "3", 1.5, 11])
+def test_invalid_cache_write_usage_is_rejected(cache_write: object) -> None:
+    assert usage_of({
+        "model": "gpt-6-luna", "usage": {
+            "input_tokens": 20, "input_tokens_details": {"cached_tokens": 10, "cache_write_tokens": cache_write},
+        },
+    }) is None
+
+
+@pytest.mark.parametrize("details", [
+    {"cache_write_tokens": 10}, {"cached_tokens": None, "cache_write_tokens": 10},
+    {"cache_write_tokens": 0}, {"cached_tokens": None, "cache_write_tokens": 0},
+])
+def test_unreported_cache_reads_keep_pricing_unknown_even_when_writes_are_reported(details: dict[str, int | None]) -> None:
+    call = usage_of({"model": "gpt-6-luna", "usage": {
+        "input_tokens": 20, "output_tokens": 3, "input_tokens_details": details,
+    }})
+    assert call is not None
+    assert call["inputTokens"] == 20
+    assert call["outputTokens"] == 3
+    assert call["cacheWriteInputTokens"] is None
+    assert call["cacheWrite12hInputTokens"] is None
+
+
+@pytest.mark.parametrize("cached", [-1, True, False, "3", 1.5, 21, []])
+def test_invalid_cache_read_count_is_rejected_instead_of_clamped(cached: object) -> None:
+    assert usage_of({"model": "gpt-6-luna", "usage": {
+        "input_tokens": 20, "input_tokens_details": {"cached_tokens": cached, "cache_write_tokens": 0},
+    }}) is None
+
+
+@pytest.mark.parametrize("ttl", ["30m", "12h", "unknown"])
+def test_only_known_cache_ttl_is_priced(ttl: str) -> None:
+    call = usage_of({
+        "model": "gpt-6-luna", "prompt_cache_options": {"ttl": ttl},
+        "usage": {"input_tokens": 20, "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 10}},
+    })
+    assert call is not None
+    assert call["cacheWriteInputTokens"] == (10 if ttl == "30m" else None)
+    assert call["cacheWrite12hInputTokens"] == (0 if ttl == "30m" else None)
+
+
+def test_aggregation_preserves_unknown_cache_write_usage() -> None:
+    known = usage_of(RESPONSE)
+    unknown = usage_of({**RESPONSE, "usage": {"input_tokens": 20, "output_tokens": 3}})
+    assert known is not None and unknown is not None
+    for calls in ([known, unknown], [unknown, known]):
+        total, = json.loads(usage_header(calls))
+        assert total["calls"] == 2
+        assert total["inputTokens"] == 1220
+        assert total["outputTokens"] == 83
+        assert total["cacheWriteInputTokens"] is None
+        assert total["cacheWrite12hInputTokens"] is None
+
+
+def test_explicit_zero_cache_writes_are_known() -> None:
+    call = usage_of({"model": "gpt-6-luna", "usage": {
+        "input_tokens": 20, "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+    }})
+    assert call is not None
+    assert call["cacheWriteInputTokens"] == 0
+    assert call["cacheWrite12hInputTokens"] == 0

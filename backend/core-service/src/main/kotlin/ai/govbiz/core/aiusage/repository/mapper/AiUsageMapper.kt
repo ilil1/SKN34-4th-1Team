@@ -20,6 +20,8 @@ data class AiUsageRecordDbRow(
     var outputTokens: Long = 0,
     var estimatedCostUsd: BigDecimal? = null,
     var priceId: Long? = null,
+    var cacheWriteInputTokens: Long? = null,
+    var cacheWrite12hInputTokens: Long? = null,
 )
 
 data class AiModelPriceDbRow(
@@ -33,6 +35,8 @@ data class AiModelPriceDbRow(
     var note: String? = null,
     var createdByAccountId: Long? = null,
     var createdAt: LocalDateTime? = null,
+    var cacheWriteInputUsdPerMillion: BigDecimal? = null,
+    var cacheWrite12hInputUsdPerMillion: BigDecimal? = null,
 )
 
 /** 기간 합계 한 줄입니다. 묶는 열이 있으면 [groupKey]·[serviceTier]에, 계정별이면 계정 칸에 담습니다. */
@@ -48,6 +52,9 @@ data class AiUsageTotalsDbRow(
     var outputTokens: Long = 0,
     var estimatedUsd: BigDecimal = BigDecimal.ZERO,
     var unpricedCalls: Long = 0,
+    var cacheWriteInputTokens: Long? = null,
+    var cacheWrite12hInputTokens: Long? = null,
+    var incompleteUsageCalls: Long = 0,
 )
 
 data class AiUsageDayDbRow(
@@ -64,6 +71,31 @@ data class AiCostDailyDbRow(
     var fetchedAt: LocalDateTime? = null,
 )
 
+data class AiProviderUsageDbRow(
+    var usageDate: LocalDate? = null,
+    var usageKind: String = "",
+    var projectId: String = "",
+    var model: String = "",
+    var serviceTier: String = "",
+    var batchKind: Int = -1,
+    var callCount: Long = 0,
+    var inputTokens: Long = 0,
+    var cachedInputTokens: Long? = null,
+    var cacheWriteInputTokens: Long? = null,
+    var cacheWrite12hInputTokens: Long? = null,
+    var outputTokens: Long = 0,
+    var estimatedCostUsd: BigDecimal? = null,
+    var priceId: Long? = null,
+)
+
+data class AiCostSyncDayDbRow(
+    var usageDate: LocalDate? = null,
+    var projectScope: String = "",
+    var actualUsd: BigDecimal = BigDecimal.ZERO,
+    var fetchedAt: LocalDateTime? = null,
+    var totals: AiUsageTotalsDbRow = AiUsageTotalsDbRow(),
+)
+
 @Mapper
 interface AiUsageMapper {
     fun insertUsage(row: AiUsageRecordDbRow): Int
@@ -72,7 +104,7 @@ interface AiUsageMapper {
 
     fun insertPrice(row: AiModelPriceDbRow): Int
 
-    fun sumTotals(@Param("from") from: LocalDate, @Param("to") to: LocalDate, @Param("accountId") accountId: Long?): AiUsageTotalsDbRow
+    fun sumTotals(@Param("from") from: LocalDate, @Param("to") to: LocalDate, @Param("accountId") accountId: Long?, @Param("utc") utc: Boolean = false): AiUsageTotalsDbRow
 
     fun sumByFeature(@Param("from") from: LocalDate, @Param("to") to: LocalDate): List<AiUsageTotalsDbRow>
 
@@ -89,4 +121,18 @@ interface AiUsageMapper {
     fun deleteActualCosts(@Param("from") from: LocalDate, @Param("to") to: LocalDate): Int
 
     fun insertActualCost(row: AiCostDailyDbRow): Int
+
+    fun deleteProviderUsage(@Param("from") from: LocalDate, @Param("to") to: LocalDate): Int
+
+    fun insertProviderUsage(row: AiProviderUsageDbRow): Int
+
+    fun deleteSyncDays(@Param("from") from: LocalDate, @Param("to") to: LocalDate): Int
+
+    fun insertSyncDay(row: AiCostSyncDayDbRow): Int
+
+    fun findProviderDays(@Param("from") from: LocalDate, @Param("to") to: LocalDate, @Param("scope") scope: String): List<AiCostSyncDayDbRow>
+
+    fun lockLatestSyncStartedAt(): LocalDateTime?
+
+    fun updateLatestSyncStartedAt(@Param("startedAt") startedAt: LocalDateTime): Int
 }

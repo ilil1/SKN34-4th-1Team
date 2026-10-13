@@ -29,12 +29,18 @@ data class AiModelUsage(
     val inputTokens: Long,
     val cachedInputTokens: Long,
     val outputTokens: Long,
+    val cacheWriteInputTokens: Long? = null,
+    val cacheWrite12hInputTokens: Long? = null,
 ) {
     init {
         require(MODEL.matches(model)) { "model must be an OpenAI model name" }
         require(TIER.matches(serviceTier)) { "serviceTier must be a lowercase word" }
         require(calls >= 1) { "calls must be positive" }
         require(inputTokens >= 0 && outputTokens >= 0 && cachedInputTokens in 0..inputTokens) { "token counts are invalid" }
+        require(cacheWriteInputTokens == null || cacheWriteInputTokens in 0..(inputTokens - cachedInputTokens)) { "cache write tokens are invalid" }
+        require(cacheWrite12hInputTokens == null || cacheWrite12hInputTokens in 0..(inputTokens - cachedInputTokens - (cacheWriteInputTokens ?: 0))) {
+            "12h cache write tokens are invalid"
+        }
     }
 
     companion object {
@@ -56,15 +62,31 @@ data class AiModelPrice(
     val outputUsdPerMillion: BigDecimal,
     val effectiveFrom: LocalDate,
     val note: String?,
+    val cacheWriteInputUsdPerMillion: BigDecimal? = null,
+    val cacheWrite12hInputUsdPerMillion: BigDecimal? = null,
 ) {
     fun covers(model: String, tier: String): Boolean =
         serviceTier == tier && (model == modelPrefix || model.startsWith("$modelPrefix-"))
 
-    fun costUsd(usage: AiModelUsage): BigDecimal {
-        val cached = BigDecimal.valueOf(usage.cachedInputTokens)
-        val uncached = BigDecimal.valueOf(usage.inputTokens - usage.cachedInputTokens)
-        val output = BigDecimal.valueOf(usage.outputTokens)
-        val total = uncached * inputUsdPerMillion + cached * (cachedInputUsdPerMillion ?: inputUsdPerMillion) + output * outputUsdPerMillion
+    fun costUsd(usage: AiModelUsage): BigDecimal? = costUsd(
+        usage.inputTokens, usage.cachedInputTokens, usage.outputTokens, usage.cacheWriteInputTokens, usage.cacheWrite12hInputTokens,
+    )
+
+    fun costUsd(inputTokens: Long, cachedInputTokens: Long?, outputTokens: Long, cacheWriteInputTokens: Long?, cacheWrite12hInputTokens: Long?): BigDecimal? {
+        // 미보고 사용량·미등록 쓰기 가격은 0원으로 추정하지 않습니다.
+        val reads = cachedInputTokens ?: return null
+        val writes = cacheWriteInputTokens ?: return null
+        val writes12h = cacheWrite12hInputTokens ?: return null
+        require(inputTokens >= 0 && outputTokens >= 0 && reads in 0..inputTokens && writes in 0..(inputTokens - reads) &&
+            writes12h in 0..(inputTokens - reads - writes)) { "token counts are invalid" }
+        if (writes > 0 && cacheWriteInputUsdPerMillion == null) return null
+        if (writes12h > 0 && cacheWrite12hInputUsdPerMillion == null) return null
+        val cached = BigDecimal.valueOf(reads)
+        val uncached = BigDecimal.valueOf(inputTokens - reads - writes - writes12h)
+        val output = BigDecimal.valueOf(outputTokens)
+        val total = uncached * inputUsdPerMillion + cached * (cachedInputUsdPerMillion ?: inputUsdPerMillion) + output * outputUsdPerMillion +
+            BigDecimal.valueOf(writes) * (cacheWriteInputUsdPerMillion ?: BigDecimal.ZERO) +
+            BigDecimal.valueOf(writes12h) * (cacheWrite12hInputUsdPerMillion ?: BigDecimal.ZERO)
         return total.divide(MILLION, COST_SCALE, RoundingMode.HALF_UP)
     }
 
@@ -88,11 +110,13 @@ data class NewAiModelPrice(
     val outputUsdPerMillion: BigDecimal,
     val effectiveFrom: LocalDate,
     val note: String?,
+    val cacheWriteInputUsdPerMillion: BigDecimal? = null,
+    val cacheWrite12hInputUsdPerMillion: BigDecimal? = null,
 ) {
     init {
         require(PREFIX.matches(modelPrefix)) { "modelPrefix must be a lowercase OpenAI model name" }
         require(serviceTier in AiModelPrice.TIERS) { "serviceTier must be default, priority or flex" }
-        require(listOfNotNull(inputUsdPerMillion, cachedInputUsdPerMillion, outputUsdPerMillion).all { it.signum() >= 0 && it < LIMIT }) {
+        require(listOfNotNull(inputUsdPerMillion, cachedInputUsdPerMillion, outputUsdPerMillion, cacheWriteInputUsdPerMillion, cacheWrite12hInputUsdPerMillion).all { it.signum() >= 0 && it < LIMIT }) {
             "prices must be between 0 and 1,000,000"
         }
         require(note == null || note.length <= 200) { "note must be at most 200 characters" }
@@ -104,7 +128,7 @@ data class NewAiModelPrice(
     }
 }
 
-/** 기간 합계입니다. [unpricedCalls]는 가격표에 없어 추정 비용에 들어가지 않은 호출 수입니다. */
+/** 기간 합계입니다. [unpricedCalls]는 가격·사용량 미확정으로 추정 비용 합계에서 제외한 호출 수입니다. */
 data class AiUsageTotals(
     val calls: Long,
     val inputTokens: Long,
@@ -112,16 +136,19 @@ data class AiUsageTotals(
     val outputTokens: Long,
     val estimatedUsd: BigDecimal,
     val unpricedCalls: Long,
+    val cacheWriteInputTokens: Long? = null,
+    val cacheWrite12hInputTokens: Long? = null,
+    val incompleteUsageCalls: Long = 0,
 ) {
     companion object {
-        val EMPTY = AiUsageTotals(0, 0, 0, 0, BigDecimal.ZERO, 0)
+        val EMPTY = AiUsageTotals(0, 0, 0, 0, BigDecimal.ZERO, 0, 0, 0)
     }
 }
 
 /** 기능 또는 (모델, 처리 등급)별 합계입니다. 기능이 없는 행은 [key]가 null입니다. */
 data class AiUsageGroup(val key: String?, val serviceTier: String?, val totals: AiUsageTotals)
 
-/** 서울 날짜별 추정 비용과 OpenAI 하루(UTC)별 실제 비용입니다. */
+/** UTC 날짜별 앱 기록입니다. 실제 비용 비교는 [AiCostComparison]을 사용합니다. */
 data class AiCostDay(val date: LocalDate, val estimatedUsd: BigDecimal, val calls: Long, val actualUsd: BigDecimal?)
 
 data class AiUsageAccount(val accountId: Long, val email: String, val planCode: String?, val totals: AiUsageTotals)
@@ -130,7 +157,7 @@ data class AiUsageAccount(val accountId: Long, val email: String, val planCode: 
 data class OpenAiCostLine(val date: LocalDate, val projectId: String, val lineItem: String, val amountUsd: BigDecimal)
 
 /**
- * 관리자 AI 비용 화면의 한 기간입니다. 추정은 서울 날짜, 실제는 OpenAI 하루(UTC) 기준이라 날짜 경계가 9시간 다릅니다.
+ * 관리자 AI 비용 화면의 UTC 기간입니다. 앱 기록과 조직 비교는 범위가 달라 comparison만 비용 대조에 사용합니다.
  * 관리자 키가 없거나 아직 가져오지 않았으면 [actualUsd]가 null입니다.
  */
 data class AiCostSummary(
@@ -145,7 +172,22 @@ data class AiCostSummary(
     val byModel: List<AiUsageGroup>,
     val days: List<AiCostDay>,
     val topAccounts: List<AiUsageAccount>,
+    val comparison: AiCostComparison? = null,
 )
+
+/** 같은 UTC 구간·동기화에서 받은 조직 사용량과 비용입니다. ready도 최종 청구 확정을 뜻하지 않습니다. */
+data class AiCostComparison(
+    val from: LocalDate,
+    val to: LocalDate,
+    val fetchedAt: LocalDateTime?, // UTC
+    val status: String,
+    val includesCurrentDay: Boolean,
+    val totals: AiUsageTotals?,
+    val actualUsd: BigDecimal?,
+    val days: List<AiCostComparisonDay>,
+)
+
+data class AiCostComparisonDay(val date: LocalDate, val totals: AiUsageTotals, val actualUsd: BigDecimal?)
 
 /** 실제 비용을 가져온 결과입니다. */
 data class AiCostSyncResult(val from: LocalDate, val to: LocalDate, val lines: Int, val amountUsd: BigDecimal)

@@ -18,6 +18,7 @@ import java.math.BigDecimal
 import java.time.Clock
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.dao.DuplicateKeyException
@@ -41,9 +42,10 @@ class AiUsageService(
     fun record(operation: String, usages: List<AiModelUsage>, attribution: AiUsageAttribution?) {
         if (usages.isEmpty()) return
         val now = LocalDateTime.now(clock)
+        val pricingDate = LocalDate.now(clock.withZone(ZoneOffset.UTC))
         val prices = repository.findPrices()
         usages.forEach { usage ->
-            repository.insertUsage(now, attribution, operation, usage, AiModelPrice.find(prices, usage.model, usage.serviceTier, now.toLocalDate()))
+            repository.insertUsage(now, attribution, operation, usage, AiModelPrice.find(prices, usage.model, usage.serviceTier, pricingDate))
         }
     }
 
@@ -51,25 +53,25 @@ class AiUsageService(
     fun summary(actor: AdminActor, from: LocalDate, to: LocalDate): AiCostSummary {
         require(!to.isBefore(from) && ChronoUnit.DAYS.between(from, to) < MAX_DAYS) { "period must be 1~$MAX_DAYS days" }
         val estimated = repository.sumByDay(from, to)
-        val actual = if (properties.adminKeyConfigured || repository.findActualFetchedAt() != null) repository.sumActualByDay(from, to) else emptyMap()
-        val fetchedAt = repository.findActualFetchedAt()
+        val comparison = repository.comparison(from, to, properties.openaiProjectId, LocalDate.now(clock.withZone(ZoneOffset.UTC)))
         val days = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(to) }.map { day ->
             val (usd, calls) = estimated[day] ?: (BigDecimal.ZERO to 0L)
-            AiCostDay(day, usd, calls, actual[day])
+            AiCostDay(day, usd, calls, null)
         }.toList()
         val topAccounts = repository.sumTopAccounts(from, to, TOP_ACCOUNTS)
         val summary = AiCostSummary(
             from = from,
             to = to,
-            totals = repository.sumTotals(from, to),
-            actualUsd = if (fetchedAt == null) null else actual.values.fold(BigDecimal.ZERO, BigDecimal::add),
+            totals = repository.sumTotals(from, to, utc = true),
+            actualUsd = comparison.actualUsd,
             actualConfigured = properties.adminKeyConfigured,
-            actualFetchedAt = fetchedAt,
+            actualFetchedAt = comparison.fetchedAt?.plusHours(9),
             krwPerUsd = properties.krwPerUsd,
             byFeature = repository.sumByFeature(from, to),
             byModel = repository.sumByModel(from, to),
             days = days,
             topAccounts = topAccounts,
+            comparison = comparison,
         )
         accessLog.record(actor, AdminAccessAction.AI_COST_VIEW, requestSummary = accessSummaryOf("from" to from, "to" to to, "accounts" to topAccounts.size))
         return summary

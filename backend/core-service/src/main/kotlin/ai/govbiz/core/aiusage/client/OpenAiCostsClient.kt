@@ -6,8 +6,10 @@ import ai.govbiz.core.aiusage.client.exception.OpenAiCostsClientException.Reason
 import ai.govbiz.core.aiusage.client.mapper.OpenAiCostsMapper
 import ai.govbiz.core.aiusage.config.AiCostProperties
 import ai.govbiz.core.aiusage.domain.OpenAiCostLine
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import java.time.temporal.ChronoUnit
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
@@ -26,14 +28,34 @@ class OpenAiCostsClient(
     private val properties: AiCostProperties,
 ) {
     fun fetch(from: LocalDate, toExclusive: LocalDate): List<OpenAiCostLine> {
+        require(ChronoUnit.DAYS.between(from, toExclusive) in 1..180) { "cost range must be between 1 and 180 UTC days" }
+        val dates = from.datesUntil(toExclusive).toList().toSet()
         val lines = mutableListOf<OpenAiCostLine>()
+        val coveredDates = mutableSetOf<LocalDate>()
+        val cursors = mutableSetOf<String>()
         var cursor: String? = null
         repeat(MAX_PAGES) {
             val page = call(from, toExclusive, cursor)
-            lines += OpenAiCostsMapper.toLines(page, from, toExclusive)
-            cursor = page.nextPage?.takeIf { it.isNotBlank() } ?: return lines
+            lines += OpenAiCostsMapper.toLines(page, from, toExclusive, properties.openaiProjectId)
+            for (bucket in page.data ?: invalid()) {
+                // Mapper가 UTC 하루 경계를 확인했다. 결과가 없는 날짜도 완전성 검증에 포함한다.
+                val date = Instant.ofEpochSecond(bucket.startTime ?: invalid()).atOffset(ZoneOffset.UTC).toLocalDate()
+                if (!coveredDates.add(date)) invalid()
+            }
+            val next = page.nextPage
+            when (page.hasMore) {
+                false -> {
+                    if (next != null || coveredDates != dates) invalid()
+                    return lines
+                }
+                true -> {
+                    if (next.isNullOrBlank() || next.length > MAX_CURSOR_LENGTH || next.any { it.isISOControl() } || !cursors.add(next)) invalid()
+                    cursor = next
+                }
+                null -> invalid()
+            }
         }
-        throw OpenAiCostsClientException(Reason.INVALID_RESPONSE)
+        invalid()
     }
 
     private fun call(from: LocalDate, toExclusive: LocalDate, cursor: String?): OpenAiCostsPagePayload = try {
@@ -65,8 +87,11 @@ class OpenAiCostsClient(
         throw OpenAiCostsClientException(reason)
     }
 
+    private fun invalid(): Nothing = throw OpenAiCostsClientException(Reason.INVALID_RESPONSE)
+
     private companion object {
         const val PAGE_LIMIT = 180
         const val MAX_PAGES = 20
+        const val MAX_CURSOR_LENGTH = 2048
     }
 }

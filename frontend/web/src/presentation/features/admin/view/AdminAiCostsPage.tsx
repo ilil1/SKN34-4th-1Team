@@ -12,7 +12,7 @@ import { adminAiCostsPageStyles as styles } from './AdminAiCostsPage.styles'
 type ViewModel = ReturnType<typeof useAdminAiCostViewModel>
 
 /**
- * 관리자 AI 비용입니다. 기간의 추정 비용(요청별 토큰 × 가격표)과 OpenAI 실제 비용을 나란히 보이고, 기능·모델·날짜·회원별로 나눠 봅니다.
+ * 관리자 AI 비용입니다. 동일 UTC 기간에 함께 수집한 OpenAI 사용량 추정·실제 비용을 비교하고 앱 기록을 별도로 나눠 봅니다.
  * 가격표는 고치지 않고 시작일이 다른 가격을 더합니다. 회원 이메일이 있어 이 화면을 열면 감사 기록에 남습니다.
  */
 export function AdminAiCostsPage({ title = 'AI 비용', children, onExpired }: {
@@ -56,7 +56,7 @@ export function AdminAiCostsPage({ title = 'AI 비용', children, onExpired }: {
             </div>
           </form>
           <button className={workspacePageStyles.secondaryButton} type="button" disabled={!vm.sync.configured || vm.sync.busy} onClick={vm.sync.run}>
-            {vm.sync.busy ? '가져오는 중…' : '실제 비용 가져오기'}
+            {vm.sync.busy ? '가져오는 중…' : '사용량·비용 가져오기'}
           </button>
         </div>
         {form.error ? <p className={styles.formError} role="alert">{form.error}</p> : null}
@@ -85,8 +85,31 @@ export function AdminAiCostsPage({ title = 'AI 비용', children, onExpired }: {
 function CostSections({ vm }: { vm: ViewModel }) {
   return (
     <>
+      <h2 className={workspacePageStyles.cardTitle}>OpenAI 비용 비교 · UTC</h2>
+      {vm.comparisonPeriod ? <p className={styles.sectionNote}>{vm.comparisonPeriod}</p> : null}
+      {vm.comparisonNote ? <p className={styles.sectionNote} role="status">{vm.comparisonNote}</p> : null}
+      {vm.currentDayNote ? <p className={styles.sectionNote}>{vm.currentDayNote}</p> : null}
       <section className={adminAccountsPageStyles.statRow} aria-label="비용 요약">
         {vm.stats.map((stat) => (
+          <div className={adminAccountsPageStyles.statCell} key={stat.label}>
+            <span className={adminAccountsPageStyles.statLabel}>{stat.label}</span>
+            <strong className={adminAccountsPageStyles.statValue}>{stat.value}</strong>
+            {stat.note ? <span className={styles.statNote}>{stat.note}</span> : null}
+          </div>
+        ))}
+      </section>
+
+      <section className={workspacePageStyles.card} aria-label="날짜별">
+        <h2 className={workspacePageStyles.cardTitle}>날짜별 OpenAI 비용</h2>
+        <p className={styles.sectionNote}>추정과 실제 모두 UTC 하루(서울 오전 9시 시작) 기준이에요. 사용량은 동기화 때 함께 수집한 값이에요.</p>
+        <Table head={['날짜(UTC)', '호출', '추정', '실제']} empty="이 기간에 함께 가져온 사용량·비용이 없어요."
+          rows={vm.days.map((row) => ({ key: row.date, cells: [row.date, row.calls, row.estimated, row.actual] }))} />
+      </section>
+
+      <h2 className={workspacePageStyles.cardTitle}>{vm.applicationTitle}</h2>
+      <p className={styles.sectionNote}>앱에 기록된 호출만 기능·모델·회원별로 나눠요. Core 밖 호출의 사용자·기능은 이 내역에 자동 연결되지 않아요.</p>
+      <section className={adminAccountsPageStyles.statRow} aria-label="앱 사용량 요약">
+        {vm.applicationStats.map((stat) => (
           <div className={adminAccountsPageStyles.statCell} key={stat.label}>
             <span className={adminAccountsPageStyles.statLabel}>{stat.label}</span>
             <strong className={adminAccountsPageStyles.statValue}>{stat.value}</strong>
@@ -109,12 +132,6 @@ function CostSections({ vm }: { vm: ViewModel }) {
       </div>
 
       <div className={styles.sectionGrid}>
-        <section className={workspacePageStyles.card} aria-label="날짜별">
-          <h2 className={workspacePageStyles.cardTitle}>날짜별</h2>
-          <p className={styles.sectionNote}>추정은 서울 날짜, 실제는 OpenAI 하루(UTC, 서울 오전 9시 시작) 기준이에요.</p>
-          <Table head={['날짜', '호출', '추정', '실제']} empty="이 기간에 비용이 없어요."
-            rows={vm.days.map((row) => ({ key: row.date, cells: [row.date, row.calls, row.estimated, row.actual] }))} />
-        </section>
         <section className={workspacePageStyles.card} aria-label="많이 쓴 회원">
           <h2 className={workspacePageStyles.cardTitle}>많이 쓴 회원</h2>
           {vm.topAccounts.length === 0 ? (
@@ -172,10 +189,10 @@ function PriceSection({ vm }: { vm: ViewModel }) {
   return (
     <section className={workspacePageStyles.card} aria-label="가격표">
       <h2 className={workspacePageStyles.cardTitle}>가격표 (1M 토큰당 USD)</h2>
-      <p className={styles.sectionNote}>모델 이름은 앞부분으로 맞춰 날짜가 붙은 모델에도 적용해요. 가격이 바뀌면 고치지 말고 새 시작일로 더해 주세요.</p>
-      <Table head={['모델', '처리 등급', '입력', '캐시 입력', '출력', '시작일', '비고']} modelColumn
+      <p className={styles.sectionNote}>모델 이름은 앞부분으로 맞춰 날짜가 붙은 모델에도 적용해요. 가격이 바뀌면 고치지 말고 새 시작일로 더해 주세요. 캐시 쓰기 단가가 비어 있으면 쓰기 비용을 확정하지 않아요.</p>
+      <Table head={['모델', '처리 등급', '입력', '캐시 읽기', '캐시 쓰기', '12시간 캐시 쓰기', '출력', '시작일', '비고']} modelColumn
         empty={vm.phase === 'loading' ? '가격표를 불러오는 중이에요.' : '가격이 없어요.'}
-        rows={vm.prices.map((row) => ({ key: String(row.id), cells: [row.model, row.tier, row.input, row.cached, row.output, row.effectiveFrom, row.note] }))} />
+        rows={vm.prices.map((row) => ({ key: String(row.id), cells: [row.model, row.tier, row.input, row.cached, row.cacheWrite, row.cacheWrite12h, row.output, row.effectiveFrom, row.note] }))} />
       <form className={styles.filterForm} aria-label="가격 추가" onSubmit={form.submit} noValidate>
         <label className={styles.field}>모델
           <input className={styles.textInput} type="text" name="modelPrefix" autoComplete="off" placeholder="gpt-5.6-luna"
@@ -189,9 +206,17 @@ function PriceSection({ vm }: { vm: ViewModel }) {
           <input className={styles.numberInput} type="text" inputMode="decimal" name="inputUsdPerMillion"
             value={form.values.inputUsdPerMillion} onChange={(event) => form.update('inputUsdPerMillion', event.target.value)} />
         </label>
-        <label className={styles.field}>캐시 입력
+        <label className={styles.field}>캐시 읽기
           <input className={styles.numberInput} type="text" inputMode="decimal" name="cachedInputUsdPerMillion"
             value={form.values.cachedInputUsdPerMillion} onChange={(event) => form.update('cachedInputUsdPerMillion', event.target.value)} />
+        </label>
+        <label className={styles.field}>캐시 쓰기
+          <input className={styles.numberInput} type="text" inputMode="decimal" name="cacheWriteInputUsdPerMillion"
+            value={form.values.cacheWriteInputUsdPerMillion} onChange={(event) => form.update('cacheWriteInputUsdPerMillion', event.target.value)} />
+        </label>
+        <label className={styles.field}>12시간 캐시 쓰기
+          <input className={styles.numberInput} type="text" inputMode="decimal" name="cacheWrite12hInputUsdPerMillion"
+            value={form.values.cacheWrite12hInputUsdPerMillion} onChange={(event) => form.update('cacheWrite12hInputUsdPerMillion', event.target.value)} />
         </label>
         <label className={styles.field}>출력
           <input className={styles.numberInput} type="text" inputMode="decimal" name="outputUsdPerMillion"

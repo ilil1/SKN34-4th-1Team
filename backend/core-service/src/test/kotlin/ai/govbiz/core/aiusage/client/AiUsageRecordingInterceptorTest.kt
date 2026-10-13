@@ -54,6 +54,33 @@ class AiUsageRecordingInterceptorTest {
     }
 
     @Test
+    fun preservesBothCacheWriteCountersAndExplicitUnknownCountersFromTheAiServiceHeader() {
+        val cacheUsage = """[
+            {"model":"gpt-6-luna","serviceTier":"default","calls":2,"inputTokens":1000,"cachedInputTokens":100,
+             "outputTokens":15,"cacheWriteInputTokens":600,"cacheWrite12hInputTokens":200},
+            {"model":"gpt-5-nano","serviceTier":"default","calls":1,"inputTokens":50,"cachedInputTokens":10,
+             "outputTokens":5,"cacheWriteInputTokens":null,"cacheWrite12hInputTokens":null}
+        ]""".lineSequence().joinToString("") { it.trim() }
+        server.expect(requestTo("http://ai.test/internal/v1/assistant/answers"))
+            .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON).header(AiUsageRecordingInterceptor.USAGE_HEADER, cacheUsage))
+
+        val body = AiUsageContextHelper.attribute(7, AiUsageFeature.ASSISTANT) {
+            client.post().uri("/internal/v1/assistant/answers").retrieve().body(String::class.java)
+        }
+
+        assertEquals("{}", body)
+        Mockito.verify(service).record(
+            "assistant/answers",
+            listOf(
+                AiModelUsage("gpt-6-luna", "default", 2, 1000, 100, 15, 600, 200),
+                AiModelUsage("gpt-5-nano", "default", 1, 50, 10, 5, null, null),
+            ),
+            AiUsageAttribution(7, AiUsageFeature.ASSISTANT),
+        )
+        server.verify()
+    }
+
+    @Test
     fun aFailedAnswerStillRecordsTheTokensItSpent() {
         server.expect(requestTo("http://ai.test/internal/v1/combination-reviews/analyze"))
             .andRespond(withStatus(HttpStatus.BAD_GATEWAY).header(AiUsageRecordingInterceptor.USAGE_HEADER, usage))

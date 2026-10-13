@@ -819,7 +819,11 @@ AI API 이미지에 설치하지 않습니다. 저장 캡처로 다섯 도구를
 모든 OpenAI 호출(LangChain·openai-agents·임베딩)은 같은 OpenAI HTTP 클라이언트(`app.openai_usage.usage_http_client`)를 거칩니다.
 그 응답 훅이 성공한 Responses·Chat Completions·Embeddings 응답의 `usage`를 지금 요청 목록에 더하고, `OpenAIUsageMiddleware`가 응답 머리에
 `X-GovBiz-OpenAI-Usage`를 붙입니다. 값은 (모델, 처리 등급)별 합계의 JSON 배열
-`[{"model","serviceTier","calls","inputTokens","cachedInputTokens","outputTokens"}]`이며 입력은 캐시를, 출력은 추론 토큰을 포함합니다.
+`[{"model","serviceTier","calls","inputTokens","cachedInputTokens","cacheWriteInputTokens","cacheWrite12hInputTokens","outputTokens"}]`입니다.
+입력은 캐시 읽기와 쓰기를, 출력은 추론 토큰을 포함합니다. Responses/Chat의 `cache_write_tokens`는 현재 지원되는 30분 쓰기로 기록하고
+12시간 쓰기는 0입니다. 읽기·쓰기 계수가 없거나 TTL을 알 수 없으면 두 쓰기 필드를 null로 남겨 비용을 미확정으로 유지하고 합계에도 전파합니다. Embeddings는 둘 다 0입니다.
+Core는 일반 입력에서 캐시 읽기·쓰기를 뺀 뒤 각 단가를 적용하며, 필요한 사용량/단가가 없으면 비용을 확정하지 않습니다.
+Core 밖의 호출과 헤더가 유실된 호출은 Core의 조직 Usage API 동기화 장부로 별도 집계합니다. 이 헤더에 조직 합계를 다시 더하지 않습니다.
 처리 등급이 없는 응답(임베딩)은 `default`, Fast 모드는 OpenAI가 `priority`로 돌려줍니다. OpenAI를 부르지 않은 요청에는 헤더가 없고,
 사용량을 읽지 못한 응답은 건너뛰고 경고만 남깁니다. 비용 계산과 저장은 Core(`aiusage`)가 맡습니다. 스트리밍 호출이 없어 응답 본문을
 훅에서 먼저 읽어도 SDK가 같은 본문을 씁니다.

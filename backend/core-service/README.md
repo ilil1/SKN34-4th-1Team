@@ -200,29 +200,44 @@ transaction에서 `WithdrawalMarkService.inherit → PlanUsageService.inherit`�
 
 ## AI 사용량과 비용
 
-`ai.govbiz.core.aiusage`는 OpenAI 호출마다 쓴 토큰과 추정 비용을 남기고, 관리자 키가 있으면 OpenAI가 알려 준 실제 비용을 함께 보입니다.
+`ai.govbiz.core.aiusage`는 앱의 회원·기능별 기록과 OpenAI 조직 사용량을 별도로 저장합니다. `/ops/usage`와 관리자 AI 비용 화면의
+주 비교는 **같은 UTC 날짜·동기화에서 가져온 OpenAI 사용량 추정과 실제 비용**이며, 앱 기록을 이 합계에 다시 더하지 않습니다.
 
-- **기록:** ai-service는 요청마다 OpenAI 응답의 `usage`를 모아 `X-GovBiz-OpenAI-Usage` 헤더(모델·처리 등급별 호출 수와 입력·캐시·출력 토큰)로
-  돌려줍니다. Core의 ai-service RestClient 다섯 개가 모두 `AiUsageRecordingInterceptor`를 거쳐
-  `AiUsageService.record(REQUIRES_NEW) → AiUsageRepository → MyBatis → MySQL(V63 ai_usage_record)`로 남기므로, 기능이 실패해 되돌려져도 쓴 토큰은
-  남습니다. 기록하지 못하면 경고만 남기고 사용자의 요청은 그대로 진행합니다.
-- **계정·기능:** AI를 부르는 블록을 `AiUsageContextHelper.attribute(계정, 기능)`로 감쌉니다. `PlanUsageService.consume`(AI 검색·원문 질문),
-  `consumeDraftProgram`과 양식 분석·문서 생성 작업(신청 문서), 중복 검토 실행(검토 소유자), 도우미, 기업 맞춤 리포트, 관심 공고 준비가 이렇게 표시하고,
-  여러 스레드로 나누는 작업은 표시를 넘깁니다. 표시가 없는 호출은 로그인 전 요청이나 시스템 작업(색인·조건 정리·공고 분석)입니다.
-  catalog-service의 색인 비용은 Core에 기록되지 않고 실제 비용에만 나타납니다.
-- **추정 비용:** V63 `ai_model_price`(1M 토큰당 USD)에서 모델 이름 접두어와 응답의 처리 등급(`default`·`priority`(Fast)·`flex`)이 맞고 사용일에
-  시작한 가장 늦은 가격을 골라 `(입력 − 캐시) × 입력가 + 캐시 × 캐시가 + 출력 × 출력가`로 계산합니다. 가격표에 없으면 비용을 비워 "가격 없음"으로 셉니다.
-  2026-10-10 공식 가격(Standard·Flex·Fast, 짧은 문맥)을 넣었고, 긴 문맥(272K 초과)·캐시 쓰기·지역 처리 할증은 반영하지 않습니다.
-  가격은 고치지 않고 관리자 화면에서 새 시작일로 더합니다.
-- **실제 비용:** `OPENAI_ADMIN_KEY`(조직 관리자 키)가 있으면 매일 서울 10:10과 관리자 요청 때 `AiCostSyncService → OpenAiCostsClient`가
-  Costs API(`/v1/organization/costs`, 하루 단위·UTC, 프로젝트·항목별)를 끝 쪽까지 읽은 뒤 그 기간의 V63 `ai_cost_daily`를 한 transaction에서
-  바꿉니다. 한 쪽이라도 실패하면 기존 값을 그대로 둡니다. 프로젝트 키로는 조회되지 않으며 OpenAI 집계는 몇 시간 늦게 반영될 수 있습니다.
+- **앱 기록:** `ai-service OpenAI 응답 → X-GovBiz-OpenAI-Usage → Core AiUsageRecordingInterceptor → AiUsageService.record(REQUIRES_NEW)
+  → AiUsageRepository → MyBatis → ai_usage_record`입니다. 회원·기능은 `AiUsageContextHelper`로 전달합니다.
+  AI 응답 헤더를 받기 전에 연결이 끊기거나 기록에 실패하면 앱 장부에 남지 않을 수 있습니다.
+- **Core 밖 호출:** `AiCostSyncService → OpenAiUsageClient → OpenAI organization/usage/completions + organization/usage/embeddings`에서
+  조직·프로젝트 전체의 UTC 일별 모델·처리 등급·Batch 여부·토큰을 조회해 V65 `ai_provider_usage_daily`에 저장합니다.
+  Catalog 색인·평가·직접 호출도 같은 범위에 속하면 포함됩니다. 개별 호출의 회원·기능·trace로 소급 연결하지는 않습니다.
+  `OPENAI_PROJECT_ID`를 설정하면 두 Usage API와 Costs API 모두 같은 프로젝트로 제한하고, 비우면 조직 전체입니다.
+- **캐시 비용:** 입력 총량에는 캐시 읽기와 쓰기가 포함되므로
+  `(입력 − 읽기 − 30분 쓰기 − 12시간 쓰기) × 입력가 + 읽기 × 읽기가 + 30분 쓰기 × 쓰기가 + 12시간 쓰기 × 12시간 쓰기가 + 출력 × 출력가`를
+  100만으로 나눕니다. V65는 기존 가격의 입력·출력 값을 보존하면서 GPT-5.6/6 계열의 확인된 30분 쓰기 단가(해당 입력가의 1.25배)를 보완합니다.
+  12시간 단가는 확인되지 않아 비워 두며, 양수 쓰기에 필요한 가격 또는 사용량이 없으면 비용을 미확정으로 남깁니다.
+  과거 앱 기록의 쓰기 토큰을 0으로 채우거나 기존 비용을 재작성하지 않습니다. GPT-5-nano 등의 개별 응답에 쓰기 계수가 없으면 앱 기록은
+  미확정일 수 있으며, Usage API가 명시적으로 0을 보고하는 조직 장부는 계산할 수 있습니다.
+- **동기화:** 기존 `OPENAI_ADMIN_KEY`로 매일 서울 10:10 또는 관리자 요청 때 최근 35일(`app.ai-cost.sync-days`)을 가져옵니다.
+  `OpenAiCostsClient`의 실제 비용과 두 Usage API의 모든 페이지·UTC 하루 경계·빈 날짜를 검증한 뒤 Repository의 짧은 transaction에서
+  `ai_provider_usage_daily`, `ai_cost_daily`, `ai_cost_sync_day`를 함께 교체합니다. 일부 조회·저장이 실패하면 기존 전체 기록을 유지합니다.
+  `ai_cost_sync_state` 행을 잠가 저장을 직렬화하고, 먼저 시작한 수집이 늦게 완료되면 최신 결과를 덮지 못하게 거절합니다.
+  0건인 날도 조회 완료를 저장하므로 미조회와 $0를 구분합니다. 조회 자체는 모델을 호출하지 않습니다.
+- **비교 기준:** 필터와 앱·조직 일별 표 모두 UTC 하루(서울 오전 9시~다음 날 오전 9시)입니다. 회원 상세의 이번 달 합계는 기존 서울 기준입니다.
+  `comparison.status`는 `not-synced`·`incomplete`·`ready`이고, 필요한 날짜가 빠지면 전체 합계는 null입니다.
+  `fetchedAt`은 UTC `Z` 시각이며, 여러 수집 시점이 섞인 기간은 가장 오래된 수집 시각을 표시합니다.
+  `ready`는 조회 범위가 채워졌다는 뜻이며 최종 청구 확정은 아닙니다. 진행 중인 날과 OpenAI 지연 집계는 이후 동기화로 바뀔 수 있습니다.
+  미등록 가격·미확정 토큰이 있으면 화면은 차액 계산을 숨깁니다. Batch·미지원 처리 등급은 사용량을 저장하되 가격이 없으면 미확정입니다.
+  긴 문맥·지역 처리 할증과 텍스트/임베딩 외 API 비용은 추정 범위에 포함되지 않아 실제 비용과 차이가 남을 수 있습니다.
+- **가격 적용:** 시작일은 UTC 기준입니다. 새 앱 요청에는 당시 가격을 저장하고, 조직 사용량은 동기화할 때 해당 사용일의 가격으로 다시 계산합니다.
+  배포 후 V65 적용과 사용량·비용 동기화가 필요합니다. 기존 실제 비용만 저장된 날짜를 조회 완료로 간주하지 않습니다.
 
 | 관리자 AI 비용 API | 동작 |
 |---|---|
-| `GET /api/v1/admin/ai-costs?from&to` | 서울 날짜 기간(최대 92일)의 추정 합계·실제 합계·기능별·모델별·날짜별·많이 쓴 회원 10명. 회원 이메일이 있어 `AI_COST_VIEW` 접속기록을 남김. no-store |
-| `GET /api/v1/admin/ai-costs/prices`, `POST .../prices` | 가격표 조회와 새 가격 추가. 같은 모델·등급·시작일은 409 `AI_MODEL_PRICE_CONFLICT`, 값이 틀리면 400 |
-| `POST /api/v1/admin/ai-costs/sync` | 실제 비용을 지금 가져옴. 관리자 키 없음 503 `OPENAI_ADMIN_KEY_MISSING`, 거절 502 `OPENAI_ADMIN_KEY_REJECTED`, 그 밖 502 |
+| `GET /api/v1/admin/ai-costs?from&to` | UTC 날짜 기간(최대 92일), 앱 기록 `totals`·기능·모델·회원별 합계와 조직 비교 `comparison`. 회원 이메일 접근은 `AI_COST_VIEW` 감사 기록. no-store |
+| `GET /api/v1/admin/ai-costs/prices`, `POST .../prices` | 가격표 조회·시작일별 추가. 캐시 쓰기 `cacheWriteInputUsdPerMillion`과 `cacheWrite12hInputUsdPerMillion`은 nullable |
+| `POST /api/v1/admin/ai-costs/sync` | 같은 UTC 범위의 사용량·비용을 함께 가져옴. 관리자 키 없음 503, 권한 거절·잘못된 응답·조회 장애 502 |
+
+공식 계약: [캐시 토큰·단가](https://developers.openai.com/api/docs/guides/prompt-caching),
+[조직 사용량](https://developers.openai.com/api/reference/resources/admin/subresources/organization/subresources/usage/methods/completions).
 
 ## 실행
 
@@ -899,9 +914,9 @@ Compose는 일부 주소·CORS 값을 내부 네트워크에 맞게 덮어씁니
 | `ACCOUNT_JWT_SECRET` | 없음(필수) | 세션 JWT HS256 서명 비밀키(32자 이상). 코드에 기본값이 없어 비어 있으면 기동 실패. Compose·`.env.example`은 로컬 개발용 값을 넣음 |
 | `ACCOUNT_IDENTITY_HMAC_KEY` | 빈 값 | 탈퇴 표식(이메일·소셜 연결·사업자등록번호) HMAC 키. 비어 있으면 `ACCOUNT_JWT_SECRET`을 씀. 따로 두면 JWT 비밀을 바꿔도 이전 표식이 계속 맞음 |
 | `ACCOUNT_WITHDRAWAL_MARK_PURGE_ENABLED` | `true` | 보관 기간(1년)이 지난 탈퇴 표식을 매일 서울 04:30에 지우는 작업 |
-| `OPENAI_ADMIN_KEY` | 빈 값 | 관리자 AI 비용 화면의 실제 비용(OpenAI Costs API)을 가져오는 조직 관리자 키. 비우면 추정 비용만 보이고, 프로젝트 키로는 조회되지 않음 |
-| `OPENAI_PROJECT_ID` | 빈 값 | 적으면 그 OpenAI 프로젝트의 비용만 가져옴 |
-| `AI_COST_SYNC_ENABLED` | `true` | 관리자 키가 있을 때 매일 서울 10:10에 최근 35일 실제 비용을 가져오는 작업 |
+| `OPENAI_ADMIN_KEY` | 빈 값 | OpenAI Usage·Costs API를 함께 가져오는 조직 관리자 키. 비우면 앱 기록만 보이고, 프로젝트 키로는 조회되지 않음 |
+| `OPENAI_PROJECT_ID` | 빈 값 | 적으면 Usage·Costs API 모두 그 OpenAI 프로젝트로 제한. 비우면 조직 전체 |
+| `AI_COST_SYNC_ENABLED` | `true` | 관리자 키가 있을 때 매일 서울 10:10에 최근 35일 사용량·실제 비용을 함께 가져오는 작업 |
 | `AI_COST_KRW_PER_USD` | 빈 값 | 관리자 AI 비용 화면에 원화를 함께 보일 운영자 환율. 비우면 USD만 |
 | `ACCOUNT_COOKIE_SECURE` | `true` | 세션 쿠키 `Secure` 속성. HTTPS가 없는 로컬 개발에서만 `false` |
 | `ACCOUNT_DEV_LOGIN_ENABLED` | `false` | `true`이면 `POST /api/v1/auth/dev-login`이 등록되어 비밀번호 없이 시드 계정 세션 발급 |
