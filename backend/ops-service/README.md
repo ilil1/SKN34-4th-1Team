@@ -1269,6 +1269,8 @@ Kubernetes liveness/readiness와 분리되어 있으며, 결과에는 검사 범
 | `GET /api/v1/ops/runtime` | `200`, 설정 검사 PASS와 검증 범위 | 구성·자료·Prefect·선택한 결과 검증 실패 `503`; 잘못된 run_id `400`; 관리자 인증 필수 |
 | `GET /api/v1/ops/evaluations/live-readiness` | `200`, 선택 자료의 최대 예약량·잔여 한도·차단/주의 사유 | `dataset_id`, `execution_profile` 필수; 입력 오류 `400`, 미인증 `401`, 비관리자 `403`, 설정 변경 `409`, 계획 확인 실패 `503`; 조회만 수행 |
 | `GET /api/v1/ops/session` | `200`, `user`(쿠키가 없으면 null), `csrf_token`, 허용 자료 목록, `search_traces_url` | 만료 `401`, 비관리자 `403`, Core 장애 `503` |
+| `GET /api/v1/ops/traces` | Langfuse의 실행 시작 단계 목록; `name`, `from_time`, `to_time`, `cursor` 조회 조건 | 인증·권한 오류 `401/403`, 조회 조건 `400`, 추적 서버 장애·설정 누락 `503` |
+| `GET /api/v1/ops/traces/{trace_id}` | 같은 trace ID의 단계·입출력·사용량; `cursor`로 다음 페이지 조회 | 인증·권한 오류 `401/403`, 없음 `404`, 추적 서버 장애 `503` |
 | `GET /api/v1/ops/evaluations/{UUID}/report` | `200`, CSP sandbox가 적용된 HTML | 미인증 `401`, 비관리자 `403`, Core 장애 `503`, 없거나 훼손된 보고서 `404` |
 | `POST /api/v1/ops/evaluations` | 최초 `202`, 재전송 `200`; 실행 메타데이터 | 자료/UUID 오류 `400`, 미인증 `401`, 권한·CSRF `403`, 요청 충돌 `409`, 인증 서버 장애·접수 미확인 `503` |
 | `GET /api/v1/ops/evaluations` | `200`, 25건 페이지 (`count`, `next`, `previous`, `results`) | 미인증 `401`, 비관리자 `403`, Core 장애 `503` |
@@ -1397,7 +1399,9 @@ scripts/check-image.py   배포 이미지 기본 명령·격리·상태 확인 �
 - `OPS_CORE_API_URL`: Compose에서 위 주소를 지정; 기본 `http://host.docker.internal:8080`
 - `OPS_WEB_URL`: 이전 Django 화면 주소의 React 이동 대상; 기본 `http://localhost:5173`
 - `PREFECT_API_URL`: Django에서 접근하는 Prefect API; 기본 `http://127.0.0.1:14200/api`
-- `PREFECT_UI_URL`, `LANGFUSE_PROJECT_URL`: 운영자 브라우저에서 여는 상세 링크
+- `PREFECT_UI_URL`, `LANGFUSE_PROJECT_URL`: Prefect 상세·Langfuse 점수 등 원본 도구의 브라우저 링크
+- `LANGFUSE_BASE_URL`: Django에서 접근하는 Langfuse HTTP(S) origin. Compose는 `http://langfuse-web:3000`, Kubernetes는 내부 Service 주소
+- `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`: 조회 대상 프로젝트의 API 키. Ops 서버 Secret에만 주입하며 브라우저에 전달하지 않음
 - `LLMOPS_RESULTS_DIR`: 실행기 결과를 읽는 디렉터리; 기본 저장소 `work/llmops-ops`
 - `DJANGO_COOKIE_SECURE`: 기본값은 `not DJANGO_DEBUG`. 로컬 HTTP 개발에서만 `false`
 
@@ -1405,12 +1409,22 @@ scripts/check-image.py   배포 이미지 기본 명령·격리·상태 확인 �
 브라우저 링크에 `localhost:14200`을 사용합니다. Core 세션 쿠키 `govbiz_session`은 동일 웹 origin의
 Core·Ops API에서 공유하고, Ops CSRF 쿠키는 `govbiz_ops_csrf`로 구별합니다. `localhost`와
 `127.0.0.1`을 브라우저 주소에서 혼용하지 않습니다. `govbiz_ops_session`은 인증 근거로 사용하지 않습니다.
-Langfuse 자체 UI는 별도 로그인입니다.
+관리자의 **AI 실행 추적**은 같은 React 앱의 `/ops/traces`로 연결됩니다. 관리자 세션의
+`search_traces_url`과 평가의 사례별 추적 링크도 `OPS_WEB_URL` 아래의 이 화면을 사용합니다.
+흐름은 `React → Ops → Core 관리자 세션 확인 → 내부 Langfuse Observations v2 API`입니다.
+매 요청마다 현재 Core 관리자 권한을 확인하므로 IP 변경이나 별도 Langfuse 로그인 없이 읽을 수 있습니다.
+비로그인 `401`, 비관리자 `403`, 인증 서버·추적 서버 장애 `503`을 구별하며 실패를 빈 목록으로 표시하지 않습니다.
+추적 조회는 GET만 허용하고 응답을 저장 캐시하지 않습니다. 새 검색·모델 호출·추적 변경은 발생하지 않습니다.
 
-관리자 세션의 `search_traces_url`은 `LANGFUSE_PROJECT_URL` 아래 `/traces` 목록입니다.
-비로그인 또는 프로젝트 URL 미설정이면 null입니다. React 운영 메뉴의 **검색 실행 추적 ↗**가
-이 링크를 새 탭으로 열며, Langfuse에서 `support-program-search` 이름으로 검색 이력을 찾습니다.
-개별 평가 점수 링크와 구분하며 새 검색 실행이나 모델 호출을 발생시키지 않습니다.
+목록은 기본 최근 7일, 최대 30일 기간의 **실행 시작 단계(logical root observation)**를 50개씩 읽습니다.
+같은 trace에 서비스별 시작 단계가 여러 개일 수 있으므로 목록 건수를 고유 실행 수로 해석하지 않습니다.
+`name`은 단계 이름의 정확한 일치 필터입니다. 다음 페이지는 응답의 `next_cursor`와 같은
+`from_time`·`to_time`·`name`을 사용합니다. 상세는 해당 trace의 단계를 50개씩 조회하며
+`next_cursor`가 있으면 아직 더 읽을 단계가 있습니다. 비용·사용량 미기록은 0으로 채우지 않습니다.
+입출력은 원문 문자열이고 메타데이터는 Langfuse API의 기본 길이 제한이 적용됩니다.
+API 응답은 최대 4 MiB이며 리디렉션·잘못된 응답은 거절합니다. 프로젝트 키로 접근 가능한 데이터만 읽습니다.
+
+Langfuse 자체 UI와 기존 점수 링크는 여전히 별도 로그인·접근 정책을 사용합니다.
 추적 범위·설정·실서버 검증 상태는 [검색 추적 안내](../../infrastructure/llmops/README.md#지원사업-ai-검색-추적)를 따릅니다.
 
 Compose의 DB 이름/사용자는 `govbiz4`로 고정하여 테스트 초기화 SQL과 일치시킵니다. 포트를 변경하면 호스트 실행의 `DB_PORT`도 맞춰야 합니다.

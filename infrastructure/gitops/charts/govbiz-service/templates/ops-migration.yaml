@@ -47,6 +47,7 @@ spec:
                   name: {{ required "secretName is required for secretKeys" $.Values.secretName }}
                   key: {{ . }}
             {{- end }}
+            {{- include "govbiz.opsTraceCredentials" . | nindent 12 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:

@@ -111,9 +111,7 @@ def api_session(request):
             "rag_live_enabled": settings.LLMOPS_LIVE_ENABLED and settings.LLMOPS_RAG_LIVE_ENABLED
             if operator
             else False,
-            "search_traces_url": f"{settings.LANGFUSE_PROJECT_URL}/traces"
-            if operator and settings.LANGFUSE_PROJECT_URL
-            else None,
+            "search_traces_url": f"{settings.OPS_WEB_URL}/ops/traces" if operator else None,
         }
     )
 
@@ -201,7 +199,7 @@ def run_data(run, viewer_id=None):
         "trace_links": [
             {
                 "case_id": case["case_id"],
-                "url": f"{settings.LANGFUSE_PROJECT_URL}/traces/{case['candidate']['trace_id']}",
+                "url": f"{settings.OPS_WEB_URL}/ops/traces/{case['candidate']['trace_id']}",
             }
             for case in run.comparison.get("cases", [])
             if re.fullmatch(r"[a-f0-9]{32}", case["candidate"].get("trace_id") or "")

@@ -13,6 +13,7 @@ Service와 복원된 PVC에 연결하는 추가 values다. 실제 클러스터·
 | Ops API·sync | `core-service.govbiz-msa`로 관리자 인증, `prefect.govbiz-evaluation`로 실행 관리, `ops-artifacts.govbiz-evaluation`로 결과 조회 |
 | 평가 실행기 | 같은 namespace의 Prefect·결과 PVC, `ops-service.govbiz-msa` 예산 API, `langfuse-web.govbiz-observability` 추적 |
 | Core·AI 추적 | `langfuse-web.govbiz-observability.svc.cluster.local:3000` |
+| Ops 관리자 추적 조회 | 같은 내부 Langfuse 주소의 Observations v2 API. GovBiz 관리자 세션으로 조회하며 별도 Langfuse 로그인 불필요 |
 | 평가 결과·벡터 캐시 | 실행기와 결과 서버가 같은 결과 PVC를 사용. Ops는 인증된 HTTP로 조회 |
 | Langfuse | 기존 `govbiz-observability` Chart의 PostgreSQL·ClickHouse·Redis·MinIO Service/PVC 사용 |
 
@@ -56,8 +57,13 @@ Langfuse는 [관측 Chart](../../charts/govbiz-observability/README.md)를 사�
 | `ops-runtime` (`govbiz-msa`) | Django·DB 키, `LLMOPS_ARTIFACT_TOKEN`, `LLMOPS_BUDGET_TOKEN` |
 | `llmops-artifacts` (`govbiz-evaluation`) | Ops와 같은 `LLMOPS_ARTIFACT_TOKEN` |
 | `llmops-runner` (`govbiz-evaluation`) | Ops와 같은 예산 토큰, Langfuse 프로젝트의 public/secret key |
-| `core-runtime`, `ai-runtime` (`govbiz-msa`) | 기존 인증·DB·도구 키와 `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` |
+| `core-runtime`, `ai-runtime` (`govbiz-msa`) | 기존 서비스별 키를 보존하고 프로젝트의 `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` 추가 |
+| `ops-langfuse` (`govbiz-msa`) | 기존 Langfuse 프로젝트의 `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`를 별도로 등록. Ops 관리자 추적 조회용 |
 | `core-mysql-runtime`, `catalog-mysql-runtime`, `ops-mysql-runtime` (`govbiz-msa`) | 복원 DB와 일치하는 `MYSQL_PASSWORD`, `MYSQL_ROOT_PASSWORD`; 앱 DB 비밀번호와 대응 |
+
+Ops의 `opsTraces.enabled=true`는 API·sync·migration에 `ops-langfuse`의 두 키만 주입한다.
+두 키를 `ops-runtime`에 추가하지 않는다. 기존 암호화 백업의 DB·인증·평가 토큰 범위는 그대로이며,
+다른 클러스터에서 추적 조회를 켤 때는 해당 환경의 Langfuse 프로젝트 키를 별도 준비한다.
 
 브라우저용 기본 주소는 `http://localhost:18173`이다. Core의 허용 Origin·OAuth 반환 주소·리포트 링크와
 Ops 웹 주소를 함께 맞췄다. 서비스 간 통신에 이 loopback 주소를 사용하지 않는다.

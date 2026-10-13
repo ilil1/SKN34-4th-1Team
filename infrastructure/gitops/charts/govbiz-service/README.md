@@ -24,3 +24,9 @@ Metrics Server, 노드 자동 확장기, 노드 그룹 최대 크기는 클러�
 CPU 기반 HPA만으로 외부 API·DB 대기나 모든 트래픽 급증을 감지하지는 못합니다.
 Argo CD는 활성화된 Deployment의 `/spec/replicas` 차이를 무시하고
 `RespectIgnoreDifferences=true`를 사용해야 기존 HPA 결정이 동기화로 덮어써지지 않습니다.
+
+Ops 관리자 실행 추적 조회는 `opsTraces.enabled: true`로 켭니다. 기본값은 `false`이며
+`ops-service`에만 적용할 수 있습니다. 기존 프로젝트의 `LANGFUSE_PUBLIC_KEY`,
+`LANGFUSE_SECRET_KEY`를 같은 namespace의 전용 `ops-langfuse` Secret에 준비합니다.
+API·sync·migration은 이 두 키만 참조합니다. `env`나 `secretKeys`에 같은 키를 중복 등록하면
+렌더링을 거절합니다. 기존 `ops-runtime`과 암호화 백업 범위는 변경하지 않습니다.

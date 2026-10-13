@@ -91,6 +91,10 @@ LANGFUSE_PROJECT_URL = env(
     "LANGFUSE_PROJECT_URL",
     default="http://localhost:13000/project/govbiz-evidence-development",
 ).rstrip("/")
+# 브라우저에 전달하지 않는 프로젝트 API 연결. 누락 시 실행 추적 조회만 503으로 거절한다.
+LANGFUSE_BASE_URL = env("LANGFUSE_BASE_URL", default="").rstrip("/")
+LANGFUSE_PUBLIC_KEY = env("LANGFUSE_PUBLIC_KEY", default="")
+LANGFUSE_SECRET_KEY = env("LANGFUSE_SECRET_KEY", default="")
 
 DATABASES = {
     "default": {

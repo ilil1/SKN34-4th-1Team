@@ -41,6 +41,9 @@ services:
       LLMOPS_LIVE_MODEL: ${LLMOPS_LIVE_MODEL:-gpt-6-luna}
       LLMOPS_ALLOWED_MODELS: ${LLMOPS_ALLOWED_MODELS:-gpt-6-luna,gpt-6-sol,gpt-5.6-luna}
       LANGFUSE_PROJECT_URL: http://localhost:13000/project/govbiz-evidence-development
+      LANGFUSE_BASE_URL: http://langfuse-web:3000
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
     volumes:
       - ops-results:/results:ro
       - ../../evaluation/support-program-evidence:/evaluation-data:ro

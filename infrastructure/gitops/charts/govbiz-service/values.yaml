@@ -18,6 +18,8 @@ secretName: ""
 secretKeys: []
 # Opt in only after Prefect/artifact Service endpoints and their Secret are configured.
 opsSync: {enabled: false}
+# Dedicated trace credentials stay outside the Ops database/recovery Secret.
+opsTraces: {enabled: false}
 resources:
   requests: {cpu: 100m, memory: 256Mi}
   limits: {cpu: "1", memory: 1Gi}

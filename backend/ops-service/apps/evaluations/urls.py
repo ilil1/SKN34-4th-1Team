@@ -7,10 +7,13 @@ from . import (
     dashboard_reviews,
     runtime_views,
     schedule_views,
+    trace_views,
     views,
 )
 
 urlpatterns = [
+    path("api/v1/ops/traces", trace_views.api_traces),
+    path("api/v1/ops/traces/<str:trace_id>", trace_views.api_trace_detail),
     path("api/v1/ops/dashboard", dashboard.api_dashboard),
     path(
         "api/v1/ops/dashboard/runs/<uuid:run_id>/review-status", dashboard_reviews.api_review_status

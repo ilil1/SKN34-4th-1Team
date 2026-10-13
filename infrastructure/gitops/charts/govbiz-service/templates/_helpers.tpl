@@ -13,3 +13,15 @@
 {{- end -}}
 {{- $image -}}
 {{- end -}}
+
+{{- define "govbiz.opsTraceCredentials" -}}
+{{- if .Values.opsTraces.enabled -}}
+{{- range $key := list "LANGFUSE_PUBLIC_KEY" "LANGFUSE_SECRET_KEY" }}
+- name: {{ $key }}
+  valueFrom:
+    secretKeyRef:
+      name: ops-langfuse
+      key: {{ $key }}
+{{- end -}}
+{{- end -}}
+{{- end -}}

@@ -20,6 +20,7 @@ import { PerformanceDashboard } from './PerformanceDashboard'
 import { EvaluationReport } from './EvaluationReport'
 import { AdminAiCostsPage } from '../admin/view/AdminAiCostsPage'
 import { EvaluationLogsPanel } from './EvaluationLogsPanel'
+import { TraceDetailPage, TraceListPage } from './TracePages'
 
 const dashboardPath = '/ops/dashboard'
 const listPath = '/ops/evaluations'
@@ -80,7 +81,7 @@ export function OpsApp() {
       <Link to={dashboardPath} className="text-lg font-extrabold tracking-tight text-brand-primary">GovBiz <span className="ml-2 text-sm font-semibold text-ink-muted">LLMOps</span></Link>
       <nav aria-label="운영 메뉴" className="flex flex-wrap items-center gap-4 text-sm">
         <Link to="/" className={styles.mutedLink}>서비스 홈</Link>
-        {session?.user && session.search_traces_url && <a href={session.search_traces_url} target="_blank" rel="noopener noreferrer" className={styles.mutedLink} title="Langfuse에서 support-program-search, assistant-agent, support-program-evidence 이름으로 필터하세요. 별도 로그인이 필요합니다.">AI 실행 추적 ↗</a>}
+        {session?.user && <Link to="/ops/traces" className={styles.mutedLink}>AI 실행 추적</Link>}
         {(session?.user || denied) && <><span>{session?.user?.username}</span><button className={styles.secondaryButton} onClick={() => void signOut()} disabled={loggingOut}>로그아웃</button></>}
       </nav>
     </header>
@@ -98,6 +99,7 @@ const liveOptions = (dataset: OpsSession['datasets'][number] | undefined) => dat
 const opsPages = [
   { path: dashboardPath, label: '성능 대시보드', description: '현재 지표와 변화 추이' },
   { path: '/ops/usage', label: '실사용 모니터링', description: '서비스 AI 사용량과 비용' },
+  { path: '/ops/traces', label: 'AI 실행 추적', description: '실행 단계·입출력·오류' },
   { path: listPath, label: '평가 이력', description: '결과 조회와 답변 검토' },
   { path: `${listPath}/new`, label: '새 평가', description: '자료 선택과 실행 접수' },
   { path: '/ops/budget', label: '예산 관리', description: '사용량과 한도 관리' },
@@ -109,7 +111,7 @@ function OpsWorkspace({ session, onExpired, onReviewChanged }: { session: OpsSes
   const [draft, setDraft] = useState<EvaluationDraft | null>(null)
   const previousPath = useRef(location.pathname)
   const current = opsPages.find((page) => page.path === location.pathname)
-    ?? opsPages.find((page) => page.path === (location.pathname.startsWith(listPath) ? listPath : dashboardPath))!
+    ?? opsPages.find((page) => page.path === (location.pathname.startsWith(listPath) ? listPath : location.pathname.startsWith('/ops/traces/') ? '/ops/traces' : dashboardPath))!
   const title = location.pathname.startsWith(`${listPath}/`) && location.pathname.endsWith('/report') ? 'Evidently 평가 보고서' : current.label
   const legacyPath = location.pathname === listPath ? ({ '#new-evaluation': `${listPath}/new`, '#evaluation-budget': '/ops/budget', '#evaluation-schedules': '/ops/schedules' } as Record<string, string>)[location.hash] : undefined
   useEffect(() => {
@@ -132,15 +134,15 @@ function OpsWorkspace({ session, onExpired, onReviewChanged }: { session: OpsSes
     <main id="ops-main" tabIndex={-1} className="min-w-0 focus-visible:outline-2 focus-visible:outline-brand-primary">
       {legacyPath ? <Navigate replace to={legacyPath} /> : <Routes>
         <Route path={dashboardPath} element={<PerformanceDashboard onExpired={onExpired} />} />
+        <Route path="/ops/traces" element={<TraceListPage onExpired={onExpired} />} />
+        <Route path="/ops/traces/:traceId" element={<TraceDetailPage key={location.pathname} onExpired={onExpired} />} />
         <Route path="/ops/usage" element={<AdminAiCostsPage title="실사용 모니터링" onExpired={onExpired}>
           <section className={styles.card} aria-label="서비스 사용량과 실행 추적">
             <h2 className={styles.cardTitle}>서비스 사용량과 실행 추적</h2>
             <p className="text-sm text-ink-muted">서비스에서 기록한 AI 호출·토큰·비용을 기간별로 조회합니다. 기능·모델별 집계와 사용량이 많은 회원 상위 10명을 확인할 수 있습니다.</p>
             <p className="mt-2 text-sm text-ink-muted">호출 수는 기록된 OpenAI 호출 수입니다. 사용자 요청 건수·실패율·응답 시간은 이 집계에 포함되지 않습니다.</p>
-            <p className="mt-2 text-sm text-ink-muted">검색·도우미·공고 근거 답변의 단계와 오류는 Langfuse에서 확인합니다. 사용자·비용 기록과 개별 trace의 자동 연결은 아직 제공하지 않습니다.</p>
-            {session.search_traces_url
-              ? <a href={session.search_traces_url} target="_blank" rel="noopener noreferrer" className={`${styles.secondaryButton} mt-3`}>Langfuse 실행 목록 열기 ↗</a>
-              : <p className="mt-3 text-sm text-ink-muted">실행 추적 연결이 설정되지 않았습니다.</p>}
+            <p className="mt-2 text-sm text-ink-muted">검색·도우미·공고 근거 답변의 단계와 오류는 AI 실행 추적에서 확인합니다. 사용자·비용 기록과 개별 trace의 자동 연결은 아직 제공하지 않습니다.</p>
+            <Link to="/ops/traces" className={`${styles.secondaryButton} mt-3`}>실행 목록 열기</Link>
           </section>
         </AdminAiCostsPage>} />
         <Route path="/ops" element={<Navigate replace to={dashboardPath} />} />
@@ -469,7 +471,12 @@ function EvaluationDetail({ onExpired, onReviewChanged }: { onExpired: () => voi
         {run.status === 'COMPLETED' && (run.comparison ? <ComparisonResult comparison={run.comparison} /> : <p className="text-sm text-ink-muted">이전 실행에는 비교 상세가 없습니다. 새 평가를 실행하면 기준·후보 차이를 확인할 수 있습니다.</p>)}
         <section className={styles.card}><h2 className={styles.cardTitle}>상세 기록과 보고서</h2><div className="flex flex-wrap gap-3">
           {run.report_url && <a className={styles.primaryButton} href={`${listPath}/${run.id}/report`} target="_blank" rel="noopener noreferrer">Evidently 보고서</a>}
-          {run.trace_links.map((trace) => <a key={trace.case_id} className={styles.secondaryButton} href={trace.url} target="_blank" rel="noopener noreferrer">Langfuse {trace.case_id} 추적·점수</a>)}
+          {run.trace_links.map((trace) => {
+            const target = new URL(trace.url, window.location.origin)
+            return target.origin === window.location.origin && /^\/ops\/traces\/[a-zA-Z0-9_-]+$/.test(target.pathname)
+              ? <Link key={trace.case_id} className={styles.secondaryButton} to={target.pathname}>{trace.case_id} 실행 추적</Link>
+              : <a key={trace.case_id} className={styles.secondaryButton} href={trace.url} target="_blank" rel="noopener noreferrer">{trace.case_id} 실행 추적 ↗</a>
+          })}
           {run.langfuse_url && <a className={styles.secondaryButton} href={run.langfuse_url} target="_blank" rel="noopener noreferrer">Langfuse 평가 점수</a>}
           {!run.report_url && !run.prefect_flow_run_id && <p className="text-sm text-ink-muted">평가가 접수되면 실행 기록을 확인할 수 있습니다.</p>}
         </div></section>

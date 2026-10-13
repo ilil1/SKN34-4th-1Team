@@ -149,6 +149,18 @@ class ObservabilityChartTests(unittest.TestCase):
         )
         self.assertEqual(policies["langfuse-web-ingress"]["ingress"][0]["ports"],
                          [{"protocol": "TCP", "port": 3000}])
+        self.assertIn(
+            {
+                "namespaceSelector": {
+                    "matchLabels": {"kubernetes.io/metadata.name": "govbiz-msa"}
+                },
+                "podSelector": {"matchExpressions": [{
+                    "key": "app.kubernetes.io/name", "operator": "In",
+                    "values": ["core-service", "ai-service", "ops-service"],
+                }]},
+            },
+            peers,
+        )
         self.assertTrue(all("namespaceSelector" in peer and "podSelector" in peer for peer in peers))
         for name in ("postgres", "clickhouse", "redis", "minio"):
             peer = policies[name + "-ingress"]["ingress"][0]["from"][0]

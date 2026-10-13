@@ -2,6 +2,7 @@
 localMode: false
 image: {tag: "", digest: "", pullPolicy: IfNotPresent}
 opsSync: {enabled: true}
+opsTraces: {enabled: true}
 env:
   DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,ops-service,ops-service.govbiz-msa.svc.cluster.local
   CORE_API_URL: http://core-service.govbiz-msa.svc.cluster.local:8080
@@ -9,6 +10,7 @@ env:
   PREFECT_API_URL: http://prefect.govbiz-evaluation.svc.cluster.local:4200/api
   PREFECT_UI_URL: http://localhost:14200
   LLMOPS_ARTIFACT_URL: http://ops-artifacts.govbiz-evaluation.svc.cluster.local:8010
+  LANGFUSE_BASE_URL: http://langfuse-web.govbiz-observability.svc.cluster.local:3000
   LLMOPS_LIVE_ENABLED: "false"
   LLMOPS_RAG_LIVE_ENABLED: "false"
   LLMOPS_SCHEDULES_ENABLED: "false"

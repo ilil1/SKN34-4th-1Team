@@ -136,9 +136,27 @@ def policy_errors(service, resources, *, require_ops_migration=True, ops_sync_en
         require(bool(container.get(probe)), f"missing {probe}")
     for budget in ("requests", "limits"):
         require(set(container["resources"][budget]) >= {"cpu", "memory"}, f"missing {budget}")
-    env = {e["name"]: e.get("value") for e in container["env"]}
-    secret_names = {e["valueFrom"]["secretKeyRef"]["name"] for e in container["env"] if "valueFrom" in e}
-    require(secret_names == {service.removesuffix("-service") + "-runtime"}, "service-scoped secret required")
+    entries = container["env"]
+    env = {e["name"]: e.get("value") for e in entries}
+    require(len(env) == len(entries), "duplicate environment keys forbidden")
+    runtime_secret = service.removesuffix("-service") + "-runtime"
+    trace_keys = {"LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY"}
+    ops_traces = service == "ops-service" and bool(trace_keys & set(env))
+    if ops_traces:
+        require(trace_keys <= set(env), "Ops traces require both dedicated credentials")
+    secret_names = set()
+    for entry in entries:
+        expected_secret = "ops-langfuse" if ops_traces and entry["name"] in trace_keys else runtime_secret
+        if "valueFrom" in entry:
+            reference = entry["valueFrom"].get("secretKeyRef", {})
+            secret_names.add(reference.get("name"))
+            require(entry["valueFrom"] == {"secretKeyRef": {
+                "name": expected_secret, "key": entry["name"]}} and "value" not in entry,
+                "service-scoped secret required")
+        elif ops_traces and entry["name"] in trace_keys:
+            require(False, "Ops traces require dedicated Secret references")
+    expected_secrets = {runtime_secret} | ({"ops-langfuse"} if ops_traces else set())
+    require(secret_names == expected_secrets, "service-scoped secret required")
     if service == "core-service":
         require(env.get("CATALOG_PROJECTION_ENABLED") == "true", "Core must use Catalog")
         require(env.get("CATALOG_SERVICE_URL") in {

@@ -52,6 +52,87 @@ class MsaChartTests(unittest.TestCase):
         resources = render("core-service", HELM, ["--set", "localMode=false", "--set", "image.digest=sha256:" + "a" * 64])
         self.assertEqual(policy_errors("core-service", resources), [])
 
+    def trace_resources(self):
+        return render("ops-service", HELM, [
+            "--values", str(ROOT / "environments/in-cluster/ops-service.yaml"),
+            "--set-string", "image.digest=sha256:" + "a" * 64,
+        ])
+
+    def test_ops_traces_default_off_and_dedicated_credentials_match_all_containers(self):
+        for resource in render("ops-service", HELM):
+            if resource["kind"] in {"Deployment", "Job"}:
+                for container in resource["spec"]["template"]["spec"]["containers"]:
+                    self.assertFalse(any(entry["name"].startswith("LANGFUSE_")
+                                         for entry in container["env"]))
+        resources = self.trace_resources()
+        self.assertEqual(policy_errors("ops-service", resources, ops_sync_enabled=True), [])
+        checked = []
+        for resource in resources:
+            if resource["kind"] in {"Deployment", "Job"}:
+                for container in resource["spec"]["template"]["spec"]["containers"]:
+                    checked.append(container["name"])
+                    entries = {entry["name"]: entry for entry in container["env"]}
+                    for key in ("LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY"):
+                        self.assertEqual(entries[key], {"name": key, "valueFrom": {
+                            "secretKeyRef": {"name": "ops-langfuse", "key": key}}})
+                    self.assertEqual(entries["DB_PASSWORD"]["valueFrom"]["secretKeyRef"]["name"],
+                                     "ops-runtime")
+        self.assertCountEqual(checked, ["ops-service", "ops-sync", "ops-migrate"])
+
+    def test_ops_traces_reject_wrong_service_non_boolean_and_duplicate_keys(self):
+        for service, args in (
+            ("core-service", ["--set", "opsTraces.enabled=true"]),
+            ("web", ["--set", "opsTraces.enabled=true"]),
+            ("ops-service", ["--set-string", "opsTraces.enabled=false"]),
+            ("ops-service", ["--set-string", "opsTraces.enabled=true"]),
+            ("ops-service", ["--set", "opsTraces.enabled=true", "--set-string",
+                             "env.LANGFUSE_PUBLIC_KEY=duplicate"]),
+            ("ops-service", ["--set", "opsTraces.enabled=true", "--set-json",
+                             'secretKeys=["DJANGO_SECRET_KEY","DB_PASSWORD","LANGFUSE_SECRET_KEY"]']),
+        ):
+            with self.subTest(service=service, args=args), self.assertRaises(subprocess.CalledProcessError):
+                render(service, HELM, args)
+
+    def test_ops_trace_policy_rejects_wrong_refs_literals_partial_or_duplicate_credentials(self):
+        original = self.trace_resources()
+        for mutation in ("wrong-secret", "wrong-key", "optional", "plaintext", "partial",
+                         "duplicate", "unrelated-key", "missing-runtime"):
+            resources = copy.deepcopy(original)
+            for resource in resources:
+                if resource["kind"] not in {"Deployment", "Job"}:
+                    continue
+                for container in resource["spec"]["template"]["spec"]["containers"]:
+                    entries = container["env"]
+                    entry = next(e for e in entries if e["name"] == "LANGFUSE_SECRET_KEY")
+                    reference = entry["valueFrom"]["secretKeyRef"]
+                    if mutation == "wrong-secret":
+                        reference["name"] = "core-runtime"
+                    elif mutation == "wrong-key":
+                        reference["key"] = "DB_PASSWORD"
+                    elif mutation == "optional":
+                        reference["optional"] = True
+                    elif mutation == "plaintext":
+                        entry.pop("valueFrom")
+                        entry["value"] = "not-a-project-key"
+                    elif mutation == "partial":
+                        entries.remove(entry)
+                    elif mutation == "duplicate":
+                        entries.append(copy.deepcopy(entry))
+                    elif mutation == "unrelated-key":
+                        next(e for e in entries if e["name"] == "DB_PASSWORD")["valueFrom"]["secretKeyRef"]["name"] = "ops-langfuse"
+                    elif mutation == "missing-runtime":
+                        container["env"] = [e for e in entries if e.get("valueFrom", {}).get("secretKeyRef", {}).get("name") != "ops-runtime"]
+            with self.subTest(mutation=mutation):
+                self.assertTrue(policy_errors("ops-service", resources, ops_sync_enabled=True))
+
+    def test_other_services_cannot_reference_ops_trace_secret(self):
+        for service in ("core-service", "catalog-service", "ai-service"):
+            resources = render(service, HELM)
+            container = next(r for r in resources if r["kind"] == "Deployment")["spec"]["template"]["spec"]["containers"][0]
+            next(e for e in container["env"] if "valueFrom" in e)["valueFrom"]["secretKeyRef"]["name"] = "ops-langfuse"
+            with self.subTest(service=service):
+                self.assertIn(service + ": service-scoped secret required", policy_errors(service, resources))
+
     def test_private_registry_uses_secret_reference_only(self):
         resources = render("ai-service", HELM, ["--set", "imagePullSecrets[0].name=ghcr-pull"])
         deployment = next(r for r in resources if r["kind"] == "Deployment")

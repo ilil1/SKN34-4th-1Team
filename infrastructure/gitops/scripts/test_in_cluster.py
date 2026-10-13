@@ -138,12 +138,14 @@ class InClusterConnectionsTests(unittest.TestCase):
                             "http://ops-artifacts.govbiz-evaluation.svc.cluster.local:8010")
                         for flag in ("LIVE", "RAG_LIVE", "SCHEDULES"):
                             self.assertEqual(env["LLMOPS_" + flag + "_ENABLED"], "false")
-                    if service in {"core-service", "ai-service"}:
+                    if service in {"core-service", "ai-service", "ops-service"}:
                         self.assertEqual(env["LANGFUSE_BASE_URL"],
                             "http://langfuse-web.govbiz-observability.svc.cluster.local:3000")
                         for key in ("LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY"):
                             entry = next(e for e in container["env"] if e["name"] == key)
                             self.assertEqual(entry["valueFrom"]["secretKeyRef"]["key"], key)
+                            if service == "ops-service":
+                                self.assertEqual(entry["valueFrom"]["secretKeyRef"]["name"], "ops-langfuse")
                             self.assertNotIn("value", entry)
                     if service == "core-service":
                         self.assertEqual(env["APP_CORS_ALLOWED_ORIGIN"], "http://localhost:18173")

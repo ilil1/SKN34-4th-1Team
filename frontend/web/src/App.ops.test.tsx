@@ -144,7 +144,7 @@ describe('React LLMOps 운영 화면', () => {
     expect(fetchMock.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false)
   })
 
-  it('실사용 메뉴에서 Core 사용량을 읽고 기간 조회·회원 상세·Langfuse를 연결한다', async () => {
+  it('실사용 메뉴에서 Core 사용량을 읽고 기간 조회·회원 상세·실행 추적을 연결한다', async () => {
     const original = fetchMock.getMockImplementation()!
     fetchMock.mockImplementation((path, options) => path === '/api/v1/ops/session'
       ? Promise.resolve(json({ ...session(), search_traces_url: 'http://localhost:13000/project/development/traces' }))
@@ -158,10 +158,9 @@ describe('React LLMOps 운영 화면', () => {
     expect(screen.getByRole('link', { name: 'member@example.com' }).getAttribute('href')).toBe('/app/admin/accounts/detail?accountId=11')
     expect(screen.getByRole('link', { name: '실사용 모니터링' }).getAttribute('aria-current')).toBe('page')
     expect(document.title).toBe('GovBiz · 실사용 모니터링')
-    const traceLink = screen.getByRole('link', { name: 'Langfuse 실행 목록 열기 ↗' })
-    expect(traceLink.getAttribute('href')).toBe('http://localhost:13000/project/development/traces')
-    expect(traceLink.getAttribute('rel')).toBe('noopener noreferrer')
-    expect(traceLink.getAttribute('target')).toBe('_blank')
+    const traceLink = screen.getByRole('link', { name: '실행 목록 열기' })
+    expect(traceLink.getAttribute('href')).toBe('/ops/traces')
+    expect(traceLink.getAttribute('target')).toBeNull()
     fireEvent.change(screen.getByLabelText('시작일', { selector: 'input[name="from"]' }), { target: { value: '2026-10-01' } })
     fireEvent.change(screen.getByLabelText('종료일'), { target: { value: '2026-10-13' } })
     fireEvent.click(screen.getByRole('button', { name: '조회' }))
@@ -171,7 +170,7 @@ describe('React LLMOps 운영 화면', () => {
     expect(fetchMock.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false)
   })
 
-  it('실사용 주소를 바로 열면 추적 미설정과 빈 사용량을 명시한다', async () => {
+  it('실사용 주소를 바로 열면 빈 사용량과 내부 실행 추적 진입을 표시한다', async () => {
     const original = fetchMock.getMockImplementation()!
     fetchMock.mockImplementation((path, options) => path.includes('/api/v1/admin/ai-costs?')
       ? Promise.resolve(json({ ...serviceUsage, totals: { calls: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, estimatedUsd: '0.000000', unpricedCalls: 0 }, byFeature: [], byModel: [], days: [], topAccounts: [] }))
@@ -179,8 +178,7 @@ describe('React LLMOps 운영 화면', () => {
     open('/ops/usage')
     expect(await screen.findByRole('heading', { level: 1, name: '실사용 모니터링' })).toBeTruthy()
     expect(await screen.findByText('회원에게 붙은 AI 호출이 없어요.')).toBeTruthy()
-    expect(screen.getByText('실행 추적 연결이 설정되지 않았습니다.')).toBeTruthy()
-    expect(screen.queryByRole('link', { name: 'Langfuse 실행 목록 열기 ↗' })).toBeNull()
+    expect(screen.getByRole('link', { name: '실행 목록 열기' }).getAttribute('href')).toBe('/ops/traces')
     expect(screen.queryByRole('region', { name: '실측 결과 추이' })).toBeNull()
     expect(fetchMock.mock.calls.some(([path]) => path === '/api/v1/ops/dashboard')).toBe(false)
   })
@@ -383,18 +381,22 @@ describe('React LLMOps 운영 화면', () => {
     expect(screen.queryByText('고정 근거 답변')).toBeNull()
   })
 
-  it('관리자 세션의 Langfuse 추적 링크를 별도 탭으로 연다', async () => {
+  it('관리자 세션으로 내부 실행 추적을 열고 외부 Langfuse 링크를 사용하지 않는다', async () => {
     const original = fetchMock.getMockImplementation()!
-    fetchMock.mockImplementation((path, options) => path === '/api/v1/ops/session'
-      ? Promise.resolve(json({ ...session(), search_traces_url: 'http://localhost:13000/project/development/traces' }))
-      : original(path, options))
-    open()
-    const link = await screen.findByRole('link', { name: 'AI 실행 추적 ↗' })
-    expect(link.getAttribute('href')).toBe('http://localhost:13000/project/development/traces')
-    expect(link.getAttribute('target')).toBe('_blank')
-    expect(link.getAttribute('rel')).toBe('noopener noreferrer')
-    expect(link.getAttribute('title')).toContain('assistant-agent')
-    expect(link.getAttribute('title')).toContain('support-program-evidence')
+    fetchMock.mockImplementation((path, options) => {
+      if (path === '/api/v1/ops/session') return Promise.resolve(json({ ...session(), search_traces_url: 'https://blocked.cloudfront.net/project/test/traces' }))
+      if (path === '/api/v1/ops/traces') return Promise.resolve(json({ results: [], next_cursor: null, from_time: '2026-10-07T00:00:00Z', to_time: '2026-10-14T00:00:00Z' }))
+      return original(path, options)
+    })
+    open('/ops/dashboard')
+    await screen.findByRole('navigation', { name: 'LLMOps 작업 메뉴' })
+    const link = within(screen.getByRole('navigation', { name: '운영 메뉴' })).getByRole('link', { name: 'AI 실행 추적' })
+    expect(link.getAttribute('href')).toBe('/ops/traces')
+    expect(link.getAttribute('target')).toBeNull()
+    fireEvent.click(link)
+    expect(await screen.findByRole('heading', { name: '이 기간에 기록된 실행이 없습니다.' })).toBeTruthy()
+    expect(within(screen.getByRole('navigation', { name: 'LLMOps 작업 메뉴' })).getByRole('link', { name: 'AI 실행 추적' }).getAttribute('aria-current')).toBe('page')
+    expect(fetchMock.mock.calls.some(([url]) => url.includes('cloudfront.net'))).toBe(false)
   })
 
   it('평가 취소를 CSRF와 함께 접수하고 종료 확인까지 취소 요청 중으로 표시한다', async () => {
@@ -536,9 +538,9 @@ describe('React LLMOps 운영 화면', () => {
       if (path === `/api/v1/ops/evaluations/${child}/review`) return json({ ...reviewDefaults, is_baseline: false, baseline_version: 0, baseline_history: [], reviews: [], material: null, material_error: '' })
       return original(path, options)
     })
-    open(`/ops/evaluations/${id}`)
-    fireEvent.click(await screen.findByRole('button', { name: '후처리 다시 실행' }))
-    const link = await screen.findByRole('link', { name: '원본 실행과 실패 기록 보기' })
+    await act(async () => { open(`/ops/evaluations/${id}`) })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '후처리 다시 실행' })) })
+    const link = screen.getByRole('link', { name: '원본 실행과 실패 기록 보기' })
     expect(link.getAttribute('href')).toBe(`/ops/evaluations/${id}`)
     expect(screen.getByText(/추가 모델 호출은 0회/)).toBeTruthy()
     const options = fetchMock.mock.calls.find(([path]) => path.endsWith('/recover'))![1]!
@@ -892,9 +894,14 @@ it('서버에서 비활성화한 새 모델 평가를 접수하지 않는다', a
 })
 
 it('새 평가의 호출 수와 사례별 추적 링크를 표시하고 과거 재현 문구를 쓰지 않는다', async () => {
-  fetchMock.mockResolvedValueOnce(json(session())).mockResolvedValueOnce(json({ ...completed, execution_mode: 'live', live_config: liveConfig, model_api_calls: 6, langfuse_url: null, trace_links: [{ case_id: 'TC01', url: 'http://localhost:13000/project/test/traces/abc' }] }))
-  open(`/ops/evaluations/${id}`)
-  expect(await screen.findByRole('link', { name: 'Langfuse TC01 추적·점수' })).toHaveProperty('href', 'http://localhost:13000/project/test/traces/abc')
+  const original = fetchMock.getMockImplementation()!
+  fetchMock.mockImplementation((path, options) => path === `/api/v1/ops/evaluations/${id}`
+    ? Promise.resolve(json({ ...completed, execution_mode: 'live', live_config: liveConfig, model_api_calls: 6, langfuse_url: null, trace_links: [{ case_id: 'TC01', url: `${window.location.origin}/ops/traces/abc` }] }))
+    : original(path, options))
+  await act(async () => { open(`/ops/evaluations/${id}`) })
+  const link = await screen.findByRole('link', { name: 'TC01 실행 추적' })
+  expect(link.getAttribute('href')).toBe('/ops/traces/abc')
+  expect(link.getAttribute('target')).toBeNull()
   expect(screen.queryByText(/새 모델 호출은 없으며/)).toBeNull()
   expect(screen.getAllByText('6회').length).toBeGreaterThan(0)
 })
@@ -924,30 +931,30 @@ it.each(['case', 'fixture', 'overall'] as const)('검토 새로고침은 %s 초�
     if (path.endsWith('/review')) { reads += 1; return json(state) }
     return original(path, options)
   })
-  open(`/ops/evaluations/${id}`)
-  await screen.findByLabelText('E01 판단 사유')
+  await act(async () => { open(`/ops/evaluations/${id}`) })
+  const panel = within(screen.getByRole('region', { name: '응답 검토와 기준 지정' }))
   const label = { case: 'E01 판단 사유', fixture: '평가 기준 자료 검토 사유', overall: '검토 의견' }[kind]
-  fireEvent.change(screen.getByLabelText(label), { target: { value: '검토 중인 근거' } })
+  fireEvent.change(panel.getByLabelText(label), { target: { value: '검토 중인 근거' } })
   if (kind === 'fixture') {
-    expect(screen.getByLabelText('E01 판단')).toHaveProperty('disabled', true)
-    expect(screen.getByRole('button', { name: '현재 근거로 품질 판정 저장' })).toHaveProperty('disabled', true)
-    expect(screen.getByText(/저장하지 않은 기준 자료 검토가 있습니다/)).toBeTruthy()
+    expect(panel.getByLabelText('E01 판단')).toHaveProperty('disabled', true)
+    expect(panel.getByRole('button', { name: '현재 근거로 품질 판정 저장' })).toHaveProperty('disabled', true)
+    expect(panel.getByText(/저장하지 않은 기준 자료 검토가 있습니다/)).toBeTruthy()
   }
-  fireEvent.click(screen.getByRole('button', { name: '검토 새로고침' }))
-  expect(screen.getByRole('button', { name: '입력 버리고 새로고침' })).toBeTruthy()
+  fireEvent.click(panel.getByRole('button', { name: '검토 새로고침' }))
+  expect(panel.getByRole('button', { name: '입력 버리고 새로고침' })).toBeTruthy()
   expect(reads).toBe(1)
-  expect(screen.getByLabelText(label)).toHaveProperty('value', '검토 중인 근거')
-  fireEvent.click(screen.getByRole('button', { name: '계속 작성' }))
-  expect(screen.queryByRole('button', { name: '입력 버리고 새로고침' })).toBeNull()
-  expect(screen.getByLabelText(label)).toHaveProperty('value', '검토 중인 근거')
-  fireEvent.click(screen.getByRole('button', { name: '검토 새로고침' }))
-  fireEvent.click(screen.getByRole('button', { name: '입력 버리고 새로고침' }))
-  await waitFor(() => expect(reads).toBe(2))
-  await waitFor(() => expect(screen.getByRole('button', { name: '검토 새로고침' })).toHaveProperty('disabled', false))
-  expect(screen.getByLabelText(label)).toHaveProperty('value', '')
-  expect(screen.getByLabelText('E01 판단')).toHaveProperty('disabled', false)
-  expect(screen.getByLabelText('모든 대상 사례의 평가 기준 자료를 확인하고 위 판단을 기록합니다.')).toHaveProperty('checked', false)
-  expect(screen.getByLabelText('위 모든 사례의 질문·근거·후보 답변을 검토했습니다.')).toHaveProperty('checked', false)
+  expect(panel.getByLabelText(label)).toHaveProperty('value', '검토 중인 근거')
+  fireEvent.click(panel.getByRole('button', { name: '계속 작성' }))
+  expect(panel.queryByRole('button', { name: '입력 버리고 새로고침' })).toBeNull()
+  expect(panel.getByLabelText(label)).toHaveProperty('value', '검토 중인 근거')
+  fireEvent.click(panel.getByRole('button', { name: '검토 새로고침' }))
+  await act(async () => { fireEvent.click(panel.getByRole('button', { name: '입력 버리고 새로고침' })) })
+  expect(reads).toBe(2)
+  expect(panel.getByRole('button', { name: '검토 새로고침' })).toHaveProperty('disabled', false)
+  expect(panel.getByLabelText(label)).toHaveProperty('value', '')
+  expect(panel.getByLabelText('E01 판단')).toHaveProperty('disabled', false)
+  expect(panel.getByLabelText('모든 대상 사례의 평가 기준 자료를 확인하고 위 판단을 기록합니다.')).toHaveProperty('checked', false)
+  expect(panel.getByLabelText('위 모든 사례의 질문·근거·후보 답변을 검토했습니다.')).toHaveProperty('checked', false)
   expect(fetchMock.mock.calls.some(([, options]) => options?.method === 'POST' || options?.method === 'DELETE')).toBe(false)
 })
 

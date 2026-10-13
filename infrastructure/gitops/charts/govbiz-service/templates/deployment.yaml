@@ -2,6 +2,19 @@
 {{- if not (kindIs "bool" .Values.autoscaling.enabled) -}}
   {{- fail "autoscaling.enabled must be a boolean" -}}
 {{- end -}}
+{{- if not (kindIs "bool" .Values.opsTraces.enabled) -}}
+  {{- fail "opsTraces.enabled must be a boolean" -}}
+{{- end -}}
+{{- if .Values.opsTraces.enabled -}}
+  {{- if ne .Values.serviceName "ops-service" -}}
+    {{- fail "opsTraces is only supported by ops-service" -}}
+  {{- end -}}
+  {{- range $key := list "LANGFUSE_PUBLIC_KEY" "LANGFUSE_SECRET_KEY" -}}
+    {{- if or (hasKey $.Values.env $key) (has $key $.Values.secretKeys) -}}
+      {{- fail (printf "opsTraces provides %s through ops-langfuse; duplicate env/secretKeys are forbidden" $key) -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
 {{- if ne (int .Values.replicas) 1 -}}
   {{- fail "replicas must remain 1; use autoscaling for reviewed stateless services" -}}
 {{- end -}}
@@ -120,7 +133,7 @@ spec:
           {{- end }}
           ports:
             - {name: http, containerPort: {{ .Values.port }}}
-          {{- if or .Values.env .Values.secretKeys }}
+          {{- if or .Values.env .Values.secretKeys .Values.opsTraces.enabled }}
           env:
             {{- range $key, $value := .Values.env }}
             - name: {{ $key }}
@@ -133,6 +146,7 @@ spec:
                   name: {{ required "secretName is required for secretKeys" $.Values.secretName }}
                   key: {{ . }}
             {{- end }}
+            {{- include "govbiz.opsTraceCredentials" . | nindent 12 }}
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
@@ -183,6 +197,7 @@ spec:
                   name: {{ $.Values.secretName }}
                   key: {{ . }}
             {{- end }}
+            {{- include "govbiz.opsTraceCredentials" . | nindent 12 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:

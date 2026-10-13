@@ -7,7 +7,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from .views import api_session
 
 
-@override_settings(LANGFUSE_PROJECT_URL="http://localhost:13000/project/development")
+@override_settings(OPS_WEB_URL="https://govbiz.example", LANGFUSE_PROJECT_URL="")
 class SearchTraceLinkTests(SimpleTestCase):
     @patch("apps.evaluations.views.public_datasets", return_value=[])
     @patch("apps.evaluations.views.baseline_choices", return_value={})
@@ -27,5 +27,5 @@ class SearchTraceLinkTests(SimpleTestCase):
         response = api_session(request)
         self.assertEqual(
             response.data["search_traces_url"],
-            "http://localhost:13000/project/development/traces",
+            "https://govbiz.example/ops/traces",
         )
