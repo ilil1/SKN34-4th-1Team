@@ -1,5 +1,0 @@
-# replay.py --run example이 만드는 보고서는 측정 결과가 아니므로 커밋하지 않는다.
-report.md
-metrics.json
-ai-responses.jsonl
-inputs-manifest.json
