@@ -53,7 +53,7 @@ describe('관리자 AI 실행 추적', () => {
     await screen.findByRole('link', { name: '공고 검색 · root-001' })
     fireEvent.change(screen.getByLabelText('실행 이름'), { target: { value: 'assistant-agent' } })
     fireEvent.change(screen.getByLabelText('조회 기간'), { target: { value: '30' } })
-    fireEvent.click(screen.getByRole('button', { name: '조회', exact: true }))
+    fireEvent.click(screen.getByRole('button', { name: /^조회$/ }))
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
     const query = new URL(fetch.mock.calls[1][0], 'https://govbiz.test').searchParams
     expect(query.get('name')).toBe('assistant-agent')
