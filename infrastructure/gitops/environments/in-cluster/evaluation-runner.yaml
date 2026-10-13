@@ -1,7 +1,0 @@
-# Merge with the verified evaluation release, including restored PVC/node settings.
-component: evaluation-runner
-replicas: 0
-allowLocalImages: false
-runner:
-  opsApiUrl: http://ops-service.govbiz-msa.svc.cluster.local:8000
-  langfuseUrl: http://langfuse-web.govbiz-observability.svc.cluster.local:3000

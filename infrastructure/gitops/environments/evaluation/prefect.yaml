@@ -1,8 +1,0 @@
-# Copy to an ignored local directory; bind to a separately restored PVC.
-component: prefect
-replicas: 0
-# Preserve the current Compose version during the storage migration.
-image: prefecthq/prefect:3.8.6-python3.12@sha256:ec9e58deaf30002dd65ebb755ca3d9eb5f169902882abf18c79261a4aa95bfe3
-storage:
-  existingClaim: restored-prefect
-  node: ""

@@ -1,6 +1,0 @@
-{"event": "phase_reserved", "phase": "after", "recordedAt": "2026-09-08T14:21:31.003243+00:00"}
-{"event": "attempt", "phase": "after", "caseId": "REGION_SEOUL", "repetition": 1, "requestSha256": "bd16db5a6a49e39ce79186359262604c6f96df625612e4a731da0fcd6c729a6e", "recordedAt": "2026-09-08T14:21:31.126482+00:00"}
-{"event": "attempt", "phase": "after", "caseId": "REGION_GANGNAM", "repetition": 1, "requestSha256": "316c264533cf069333f4da66ec424a5caab108ba8b9b5b940471371b70e82928", "recordedAt": "2026-09-08T14:21:50.827774+00:00"}
-{"event": "attempt", "phase": "after", "caseId": "REGION_ANSAN", "repetition": 1, "requestSha256": "72dcf18d1b66eb2aed56df107fc37c20af07fe81201c96d6e612bf9ee0a9d34b", "recordedAt": "2026-09-08T14:22:10.394569+00:00"}
-{"event": "attempt", "phase": "after", "caseId": "PUBLIC_FUNDS", "repetition": 1, "requestSha256": "d10b4b024c3fddbe1e75b1fe73db85c23cab18e96fd54d878301286d65ab6012", "recordedAt": "2026-09-08T14:22:32.199341+00:00"}
-{"event": "attempt", "phase": "after", "caseId": "PUBLIC_FUNDS", "repetition": 2, "requestSha256": "d10b4b024c3fddbe1e75b1fe73db85c23cab18e96fd54d878301286d65ab6012", "recordedAt": "2026-09-08T14:23:00.823817+00:00"}
