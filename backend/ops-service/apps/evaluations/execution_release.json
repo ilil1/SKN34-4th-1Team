@@ -75,7 +75,7 @@
     }
   },
   "rag_generation": {
-    "sha256": "b7434b473f601f383924c048233e16e8fe182fa8e8663bb259090d26c32a3002",
+    "sha256": "12426aa535ece382e8f9519f2f57ecb9c7ed9285e7a67e149d9bb64928a774a7",
     "files": {
       "evaluation/support-program-evidence/evaluate.py": "0430f08ad1f51c9a8fd22119e0b4d0badac9f89ab8e254e963a4944bd79ed514",
       "evaluation/support-program-evidence/official_snapshot.py": "1b97e2d2aa15ca02b50e2a999203c7f685de08afc735bb8456b880041c37abf4",
@@ -99,7 +99,7 @@
       "evaluation/support-program-evidence/serve_flow.py": "2c071a4d9817ad3f013cacf41263c968ae5bb04f732fa723b66628dfbd45fc88",
       "backend/ai-service/app/bootstrap.py": "32cb388b5b4ae7b4c46ff65717b635030d27501e633efcadb2501e396bb73f71",
       "backend/ai-service/app/main.py": "8b6d8147f4ddd4652d21ff35504668bb1ba021ba0849c70ec2f05aaa1f5f022e",
-      "backend/ai-service/app/openai_usage.py": "e090f3bbb526bbaeab9dff10e943a7ae1da941e79a42757bcec887ac4dc02e81",
+      "backend/ai-service/app/openai_usage.py": "e1d10f3c55c49d48e2d7a38390d100b66b5aaa3b9a490b6c8120531258b3859c",
       "backend/ai-service/app/support_program_embedding.py": "944c846cb01022a74578aad4c088387b555444b56e3b73085ba62885381aa2d5",
       "backend/ai-service/app/support_program_evidence/service.py": "7c5f6961fb2d54f308a2738892efb4e416ad8e27cced2f137e554bdbd0ca0421",
       "backend/ai-service/app/support_program_evidence/router.py": "4ff043f5d8b25c236c24ea74e5a26ed2ae5829661834ae4ffc80d98ced3e4f72"
