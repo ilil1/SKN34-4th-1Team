@@ -13,7 +13,7 @@ export function adminAiCostPeriodIssue(from: string, to: string): AdminAiCostPer
   return days > adminAiCostMaxDays ? 'too-long' : null
 }
 
-/** 서울 날짜 기간의 추정·실제 AI 비용을 읽습니다. */
+/** UTC 날짜 기간의 앱 사용량과 OpenAI 추정·실제 비용을 읽습니다. */
 export class GetAdminAiCostSummaryUseCase {
   private readonly repository: Pick<AdminAiCostRepository, 'getSummary'>
 
@@ -28,7 +28,7 @@ export class GetAdminAiCostSummaryUseCase {
   }
 }
 
-/** OpenAI Costs API에서 실제 비용을 지금 가져옵니다. 서버에 조직 관리자 키가 있어야 합니다. */
+/** OpenAI Usage·Costs API에서 같은 UTC 기간의 사용량과 실제 비용을 함께 가져옵니다. */
 export class SyncAdminAiCostsUseCase {
   private readonly repository: Pick<AdminAiCostRepository, 'sync'>
 
@@ -67,6 +67,8 @@ export class AddAdminAiModelPriceUseCase {
       ...price,
       modelPrefix: price.modelPrefix.trim().toLowerCase(),
       cachedInputUsdPerMillion: price.cachedInputUsdPerMillion?.trim() || null,
+      cacheWriteInputUsdPerMillion: price.cacheWriteInputUsdPerMillion?.trim() || null,
+      cacheWrite12hInputUsdPerMillion: price.cacheWrite12hInputUsdPerMillion?.trim() || null,
       note: note === '' ? null : note,
     }, signal)
   }

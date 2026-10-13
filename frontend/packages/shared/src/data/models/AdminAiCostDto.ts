@@ -11,9 +11,24 @@ const totalsSchema = z.object({
   calls: countSchema,
   inputTokens: countSchema,
   cachedInputTokens: countSchema,
+  cacheWriteInputTokens: countSchema.nullable().default(null),
+  cacheWrite12hInputTokens: countSchema.nullable().default(null),
   outputTokens: countSchema,
   estimatedUsd: usdSchema,
   unpricedCalls: countSchema,
+  incompleteUsageCalls: countSchema.default(0),
+})
+
+const comparisonSchema = z.object({
+  timezone: z.literal('UTC'),
+  from: dateSchema,
+  to: dateSchema,
+  fetchedAt: z.iso.datetime().nullable(),
+  status: z.enum(['not-synced', 'incomplete', 'ready']),
+  includesCurrentDay: z.boolean(),
+  totals: totalsSchema.nullable(),
+  actualUsd: usdSchema.nullable(),
+  days: z.array(z.object({ date: dateSchema, totals: totalsSchema, actualUsd: usdSchema.nullable() })),
 })
 
 export const adminAiCostSummaryDtoSchema = z.object({
@@ -24,6 +39,7 @@ export const adminAiCostSummaryDtoSchema = z.object({
   actualConfigured: z.boolean(),
   actualFetchedAt: z.string().min(1).nullable(),
   krwPerUsd: z.string().regex(/^\d+(\.\d+)?$/).nullable(),
+  comparison: comparisonSchema.nullable().default(null),
   byFeature: z.array(z.object({ key: z.string().min(1).nullable(), serviceTier: z.string().nullable(), totals: totalsSchema })),
   byModel: z.array(z.object({ key: z.string().min(1), serviceTier: z.string().min(1), totals: totalsSchema })),
   days: z.array(z.object({ date: dateSchema, estimatedUsd: usdSchema, calls: countSchema, actualUsd: usdSchema.nullable() })),
@@ -41,6 +57,8 @@ export const adminAiModelPriceDtoSchema = z.object({
   serviceTier: z.enum(['default', 'priority', 'flex']),
   inputUsdPerMillion: priceSchema,
   cachedInputUsdPerMillion: priceSchema.nullable(),
+  cacheWriteInputUsdPerMillion: priceSchema.nullable().default(null),
+  cacheWrite12hInputUsdPerMillion: priceSchema.nullable().default(null),
   outputUsdPerMillion: priceSchema,
   effectiveFrom: dateSchema,
   note: z.string().nullable(),
@@ -62,6 +80,11 @@ export function toAdminAiCostSummary(dto: AdminAiCostSummaryDto): AdminAiCostSum
     actualConfigured: dto.actualConfigured,
     actualFetchedAt: dto.actualFetchedAt,
     krwPerUsd: dto.krwPerUsd,
+    comparison: dto.comparison === null ? null : {
+      ...dto.comparison,
+      totals: dto.comparison.totals === null ? null : { ...dto.comparison.totals },
+      days: dto.comparison.days.map((day) => ({ ...day, totals: { ...day.totals } })),
+    },
     byFeature: dto.byFeature.map((group) => ({ key: group.key, totals: { ...group.totals } })),
     byModel: dto.byModel.map((group) => ({ key: group.key, serviceTier: group.serviceTier, totals: { ...group.totals } })),
     days: dto.days.map((day) => ({ ...day })),

@@ -8,4 +8,6 @@ data class AiServiceUsagePayload(
     val inputTokens: Long,
     val cachedInputTokens: Long,
     val outputTokens: Long,
+    val cacheWriteInputTokens: Long? = null,
+    val cacheWrite12hInputTokens: Long? = null,
 )

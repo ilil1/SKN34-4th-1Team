@@ -151,7 +151,7 @@ describe('React LLMOps 운영 화면', () => {
       : original(path, options))
     open('/ops/dashboard')
     fireEvent.click(await screen.findByRole('link', { name: '실사용 모니터링' }))
-    const stats = await screen.findByRole('region', { name: '비용 요약' })
+    const stats = await screen.findByRole('region', { name: '앱 사용량 요약' })
     expect(within(stats).getByText('7회')).toBeTruthy()
     expect(within(screen.getByRole('region', { name: '기능별' })).getByText('AI 대화 검색')).toBeTruthy()
     expect(within(screen.getByRole('region', { name: '모델별' })).getByText('gpt-6-luna')).toBeTruthy()
@@ -213,7 +213,7 @@ describe('React LLMOps 운영 화면', () => {
     open('/ops/usage')
     if (operation !== 'summary') {
       await screen.findByRole('region', { name: '비용 요약' })
-      if (operation === 'sync') fireEvent.click(screen.getByRole('button', { name: '실제 비용 가져오기' }))
+      if (operation === 'sync') fireEvent.click(screen.getByRole('button', { name: '사용량·비용 가져오기' }))
       else {
         const form = within(screen.getByRole('form', { name: '가격 추가' }))
         fireEvent.change(form.getByLabelText('모델'), { target: { value: 'gpt-6-luna' } })

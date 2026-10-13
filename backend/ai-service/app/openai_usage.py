@@ -51,25 +51,52 @@ async def record_openai_usage(response: httpx.Response) -> None:
 
 
 def usage_of(body: Any) -> dict[str, Any] | None:
-    """응답 본문에서 모델·처리 등급·입력(캐시 포함)·캐시·출력(추론 포함) 토큰을 꺼낸다."""
+    """입력에 포함된 캐시 읽기·쓰기를 구분한다. 쓰기 미보고는 0이 아닌 미확정으로 보낸다."""
     if not isinstance(body, dict) or not isinstance(body.get("usage"), dict) or not isinstance(body.get("model"), str):
         return None
     usage = body["usage"]
     if "input_tokens" in usage:  # Responses
         input_tokens, output_tokens = usage.get("input_tokens"), usage.get("output_tokens", 0)
-        cached = (usage.get("input_tokens_details") or {}).get("cached_tokens", 0)
+        details = usage.get("input_tokens_details") or {}
     else:  # Chat Completions, Embeddings
         input_tokens, output_tokens = usage.get("prompt_tokens"), usage.get("completion_tokens", 0)
-        cached = (usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0)
-    values = (input_tokens, cached or 0, output_tokens or 0)
+        details = usage.get("prompt_tokens_details") or {}
+    if not isinstance(details, dict):
+        return None
+    reported_cached = details.get("cached_tokens")
+    cached = 0 if reported_cached is None else reported_cached
+    values = (input_tokens, cached, output_tokens or 0)
     if not all(isinstance(value, int) and not isinstance(value, bool) and value >= 0 for value in values):
         return None
+    if cached > input_tokens:
+        return None
+    embedding = body.get("object") == "list" and body["model"].startswith("text-embedding-")
+    cache_write = details.get("cache_write_tokens")
+    cache_write_12h = None
+    if cache_write is not None:
+        if not isinstance(cache_write, int) or isinstance(cache_write, bool) or not 0 <= cache_write <= input_tokens - cached:
+            return None
+        # Responses/Chat은 현재 30m TTL만 지원하며 이 값은 일반 입력과 중복 과금하지 않는다.
+        # 응답에 알 수 없는 TTL이 추가되면 임의로 30m 가격을 적용하지 않는다.
+        options = body.get("prompt_cache_options") or {}
+        if isinstance(options, dict) and options.get("ttl") in (None, "30m"):
+            cache_write_12h = 0
+        else:
+            cache_write = None
+    elif embedding:
+        # Embeddings는 프롬프트 캐시를 사용하지 않는다.
+        cache_write, cache_write_12h = 0, 0
+    if not embedding and reported_cached is None:
+        # 기존 읽기 합계 계약은 유지하되, 읽기 미보고를 완전한 토큰 분할로 가격 계산하지 않게 한다.
+        cache_write, cache_write_12h = None, None
     tier = body.get("service_tier")
     return {
         "model": body["model"],
         "serviceTier": tier if isinstance(tier, str) and tier else "default",
         "inputTokens": values[0],
-        "cachedInputTokens": min(values[1], values[0]),
+        "cachedInputTokens": cached,
+        "cacheWriteInputTokens": cache_write,
+        "cacheWrite12hInputTokens": cache_write_12h,
         "outputTokens": values[2],
     }
 
@@ -81,10 +108,14 @@ def usage_header(calls: list[dict[str, Any]]) -> str:
         key = (call["model"], call["serviceTier"])
         total = totals.setdefault(key, {
             "model": key[0], "serviceTier": key[1], "calls": 0, "inputTokens": 0, "cachedInputTokens": 0, "outputTokens": 0,
+            "cacheWriteInputTokens": 0, "cacheWrite12hInputTokens": 0,
         })
         total["calls"] += 1
         for name in ("inputTokens", "cachedInputTokens", "outputTokens"):
             total[name] += call[name]
+        for name in ("cacheWriteInputTokens", "cacheWrite12hInputTokens"):
+            value = call.get(name)
+            total[name] = total[name] + value if total[name] is not None and value is not None else None
     return json.dumps(list(totals.values()), separators=(",", ":"), ensure_ascii=True)
 
 

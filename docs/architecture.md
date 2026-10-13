@@ -542,8 +542,14 @@ V59 `account_plan.ends_at`이 지나면 FREE 기준으로 돌아갑니다. 사�
 
 AI 비용은 `ai-service OpenAI 응답 → 사용량 헤더(X-GovBiz-OpenAI-Usage) → Core AiUsageRecordingInterceptor → AiUsageService(REQUIRES_NEW)
 → AiUsageRepository → MyBatis → MySQL(V63)` 순서로 요청마다 남고, 계정·기능은 AI를 부른 기능이 `AiUsageContextHelper`로 표시합니다.
-추정 비용은 가격표(V63 `ai_model_price`)로 계산하고, 실제 비용은 조직 관리자 키가 있을 때만 `AiCostSyncService → OpenAiCostsClient → OpenAI Costs API`
-로 전체 기간을 읽은 뒤 짧은 transaction에서 바꿉니다. 관리자는 `/app/admin/ai-costs`(사이드바 메뉴는 잠시 숨김, 주소로 열림)와 계정 상세의 요금제 패널에서 봅니다.
+캐시 읽기·30분 쓰기·12시간 쓰기는 입력에서 분리해 각각의 가격으로 계산하며, 미보고 토큰·미등록 쓰기 단가는 미확정으로 남깁니다(V65).
+조직 비용 비교는 `AiCostSyncService → OpenAiUsageClient(completions·embeddings) + OpenAiCostsClient → OpenAI`로 같은 UTC 기간을 모두 읽고,
+`AiUsageRepository → MyBatis → MySQL`의 한 transaction에서 사용량·실제 비용·조회 완료 날짜를 함께 저장합니다.
+동기화 상태 행을 잠그고 수집 시작시각을 비교해, 늦게 완료된 과거 수집이 새 결과를 덮는 것을 막습니다.
+Core를 거치지 않은 Catalog·평가·직접 호출도 선택한 조직/프로젝트 범위면 포함되며, 회원·기능별 앱 기록과 중복 합산하지 않습니다.
+관리자는 `/ops/usage` 또는 `/app/admin/ai-costs`에서 UTC 날짜로 비교합니다. 일부 날짜 미조회·토큰 미확정·가격 누락이면 차액을 확정하지 않고,
+진행 중인 날짜와 제공자의 지연 집계 가능성을 표시합니다. 계정 상세의 이번 달 합계만 기존 서울 기준을 유지합니다.
+[AI 사용량과 비용 계약](../backend/core-service/README.md#ai-사용량과-비용)에 저장 범위와 한계를 정리합니다.
 
 ## 검색·상세 조회·원문 근거 질문
 

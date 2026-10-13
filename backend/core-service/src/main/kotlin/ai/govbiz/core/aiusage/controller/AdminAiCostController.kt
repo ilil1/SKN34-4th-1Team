@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
 /**
- * 관리자 AI 비용 화면입니다. 기간(서울 날짜, 최대 92일)의 추정 비용과 OpenAI 실제 비용, 기능·모델·회원별 합계, 가격표를 다룹니다.
+ * 관리자 AI 비용 화면입니다. 기간(UTC 날짜, 최대 92일)의 조직 사용량·비용 비교와 앱 기능·모델·회원별 합계, 가격표를 다룹니다.
  * [AdminPrincipal]을 받으므로 세션이 없으면 401, 관리자가 아니면 403입니다. 요약 조회는 회원 이메일이 있어 접속기록을 남깁니다.
  */
 @RestController

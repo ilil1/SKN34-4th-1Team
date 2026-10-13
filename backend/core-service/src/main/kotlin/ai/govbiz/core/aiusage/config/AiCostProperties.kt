@@ -8,7 +8,7 @@ import java.time.Duration
 import org.springframework.boot.context.properties.ConfigurationProperties
 
 /**
- * 실제 OpenAI 비용을 가져오는 설정입니다. 조직 관리자 키([openaiAdminKey], `OPENAI_ADMIN_KEY`)가 있을 때만 Costs API를 부르며,
+ * OpenAI 조직 사용량과 실제 비용을 함께 가져오는 설정입니다. 조직 관리자 키([openaiAdminKey], `OPENAI_ADMIN_KEY`)가 있을 때만 Usage·Costs API를 부르며,
  * 프로젝트 키(`sk-proj-…`)로는 가져올 수 없습니다. [openaiProjectId]를 적으면 그 프로젝트 비용만 가져옵니다.
  * [krwPerUsd]는 화면에 원화를 함께 보이는 운영자 입력 환율이며, 비우면 USD만 보입니다.
  */

@@ -29,7 +29,8 @@ class AiUsageRecordingInterceptor(
         val operation = operationOf(request.uri.path)
         try {
             val usages = json.readValue(header, Array<AiServiceUsagePayload>::class.java).map {
-                AiModelUsage(it.model, it.serviceTier, it.calls, it.inputTokens, it.cachedInputTokens, it.outputTokens)
+                AiModelUsage(it.model, it.serviceTier, it.calls, it.inputTokens, it.cachedInputTokens, it.outputTokens,
+                    it.cacheWriteInputTokens, it.cacheWrite12hInputTokens)
             }
             service.record(operation, usages, AiUsageContextHelper.current())
         } catch (error: Exception) {

@@ -39,6 +39,7 @@ describe('AdminAiCostRepositoryImpl', () => {
 
   it('adds a price and reports duplicates and invalid values as outcomes', async () => {
     const created = { id: 9, modelPrefix: 'gpt-6-luna', serviceTier: 'flex', inputUsdPerMillion: '0.05', cachedInputUsdPerMillion: null,
+      cacheWriteInputUsdPerMillion: '0.0625', cacheWrite12hInputUsdPerMillion: null,
       outputUsdPerMillion: '0.25', effectiveFrom: '2026-11-01', note: null }
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse(created, 201))
@@ -47,11 +48,13 @@ describe('AdminAiCostRepositoryImpl', () => {
     vi.stubGlobal('fetch', fetchMock)
     const useCase = new AddAdminAiModelPriceUseCase(new AdminAiCostRepositoryImpl())
     const input = { modelPrefix: ' GPT-6-Luna ', serviceTier: 'flex' as const, inputUsdPerMillion: '0.05', cachedInputUsdPerMillion: ' ',
+      cacheWriteInputUsdPerMillion: ' 0.0625 ', cacheWrite12hInputUsdPerMillion: ' ',
       outputUsdPerMillion: '0.25', effectiveFrom: '2026-11-01', note: '  ' }
 
     await expect(useCase.execute(input)).resolves.toEqual({ outcome: 'done', price: created })
     expect(JSON.parse(String(fetchMock.mock.calls[0]![1].body))).toEqual({
       modelPrefix: 'gpt-6-luna', serviceTier: 'flex', inputUsdPerMillion: '0.05', cachedInputUsdPerMillion: null,
+      cacheWriteInputUsdPerMillion: '0.0625', cacheWrite12hInputUsdPerMillion: null,
       outputUsdPerMillion: '0.25', effectiveFrom: '2026-11-01', note: null,
     })
     await expect(useCase.execute(input)).resolves.toEqual({ outcome: 'conflict' })
