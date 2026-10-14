@@ -1,1 +1,0 @@
-"""Application preparation tests."""
