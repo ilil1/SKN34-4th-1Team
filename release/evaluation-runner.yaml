@@ -1,0 +1,183 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: evaluation-runner
+  namespace: govbiz-evaluation
+  annotations:
+    argocd.argoproj.io/sync-wave: '-1'
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: evaluation-runner
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress: []
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: prefect
+    ports:
+    - protocol: TCP
+      port: 4200
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: govbiz-msa
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ops-service
+    ports:
+    - protocol: TCP
+      port: 8000
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: govbiz-observability
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: langfuse-web
+    ports:
+    - protocol: TCP
+      port: 3000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: evaluation-runner
+  namespace: govbiz-evaluation
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  revisionHistoryLimit: 3
+  progressDeadlineSeconds: 600
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: evaluation-runner
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: evaluation-runner
+        govbiz.io/evaluation-volume: shared
+      annotations:
+        govbiz.io/source-sha: d6c9162e607f559ba25a1ad31232c96eb0e96bbc
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 120
+      nodeSelector:
+        govbiz.io/workload-pool: observability
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: evaluation-runner
+        image: 448871779288.dkr.ecr.ap-southeast-2.amazonaws.com/govbiz-demo/evaluation-runner@sha256:488f738e16411ee3dc25cb2fc10fce1f2ca3698f6edaee55794db8726770a8f9
+        imagePullPolicy: IfNotPresent
+        workingDir: /app/backend/ai-service
+        command:
+        - /app/backend/ai-service/.venv/bin/python
+        - /app/evaluation/support-program-evidence/ops_flow.py
+        env:
+        - name: HOME
+          value: /tmp
+        - name: PREFECT_HOME
+          value: /tmp/prefect
+        - name: PREFECT_API_URL
+          value: http://prefect:4200/api
+        - name: PREFECT_SERVER_ALLOW_EPHEMERAL_MODE
+          value: 'false'
+        - name: PREFECT_SERVER_ANALYTICS_ENABLED
+          value: 'false'
+        - name: DO_NOT_TRACK
+          value: '1'
+        - name: LLMOPS_RESULTS_DIR
+          value: /results
+        - name: LLMOPS_LIVE_ENABLED
+          value: 'false'
+        - name: LLMOPS_RAG_LIVE_ENABLED
+          value: 'false'
+        - name: LLMOPS_SCHEDULES_ENABLED
+          value: 'false'
+        - name: OPENAI_API_KEY
+          value: ''
+        - name: LLMOPS_OPS_API_URL
+          value: http://ops-service.govbiz-msa.svc.cluster.local:8000
+        - name: LANGFUSE_ENABLED
+          value: 'true'
+        - name: LANGFUSE_BASE_URL
+          value: http://langfuse-web.govbiz-observability.svc.cluster.local:3000
+        - name: LANGFUSE_ENVIRONMENT
+          value: development
+        - name: LLMOPS_BUDGET_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: llmops-runner
+              key: LLMOPS_BUDGET_TOKEN
+        - name: LANGFUSE_PUBLIC_KEY
+          valueFrom:
+            secretKeyRef:
+              name: llmops-runner
+              key: LANGFUSE_PUBLIC_KEY
+        - name: LANGFUSE_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: llmops-runner
+              key: LANGFUSE_SECRET_KEY
+        resources:
+          limits:
+            cpu: '1'
+            memory: 1Gi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: data
+          mountPath: /results
+          readOnly: false
+        - name: work
+          mountPath: /app/work
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: results-cutover
+          readOnly: false
+      - name: tmp
+        emptyDir:
+          sizeLimit: 512Mi
+      - name: work
+        emptyDir:
+          sizeLimit: 512Mi
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                govbiz.io/evaluation-volume: shared
+            topologyKey: kubernetes.io/hostname

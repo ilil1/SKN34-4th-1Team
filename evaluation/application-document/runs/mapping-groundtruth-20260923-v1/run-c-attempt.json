@@ -1,9 +1,0 @@
-{
-  "run": "C",
-  "model": "gpt-5.6-luna",
-  "sourceSha256": "8d253d5c0f5af214caf28d20f108b106d7261c79334b77f167c3886b4b552c91",
-  "fieldCount": 10,
-  "maximumApiCalls": 1,
-  "status": "COMPLETED",
-  "apiCalls": 1
-}
