@@ -1,5 +1,0 @@
-checkbox-form.hwp is the unfilled official 2026 AI startup competition form.
-Source: https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126309
-Attachment: https://www.bizinfo.go.kr/cmm/fms/fileDown.do?atchFileId=FILE_000000000772680&fileSn=0
-SHA-256: a9284b269537001b29f241ee353c0e0924c5fd22d1c2154c188967620bd92664
-Used to reproduce native checkbox selection, placeholder replacement and line layout defects. Contains no user answers.

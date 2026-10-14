@@ -1,0 +1,167 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-service
+  namespace: govbiz-msa
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: catalog-service
+    app.kubernetes.io/instance: catalog-service
+  ports:
+  - name: http
+    port: 8081
+    targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-service
+  namespace: govbiz-msa
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  revisionHistoryLimit: 3
+  minReadySeconds: 3
+  progressDeadlineSeconds: 600
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: catalog-service
+      app.kubernetes.io/instance: catalog-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: catalog-service
+        app.kubernetes.io/instance: catalog-service
+      annotations:
+        govbiz.io/source-sha: 24d610900733a9a685fd163c23fd3b164cfbf4d0
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: catalog-service
+        image: 448871779288.dkr.ecr.ap-southeast-2.amazonaws.com/govbiz-demo/catalog-service@sha256:70fcaaeab57b807b49f47f65118a28cd8255846875389daa2542635db9876747
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 8081
+        env:
+        - name: AI_SERVICE_BASE_URL
+          value: http://ai-service:8000
+        - name: BIZINFO_SYNC_ENABLED
+          value: 'false'
+        - name: CNTRADE_NOTICE_SYNC_ENABLED
+          value: 'false'
+        - name: ELASTICSEARCH_BASE_URL
+          value: http://elasticsearch:9200
+        - name: JAVA_TOOL_OPTIONS
+          value: -XX:MaxRAMPercentage=60 -XX:ActiveProcessorCount=2
+        - name: KSTARTUP_SYNC_ENABLED
+          value: 'false'
+        - name: MSIT_SYNC_ENABLED
+          value: 'false'
+        - name: SPRING_DATASOURCE_URL
+          value: jdbc:mysql://catalog-mysql:3306/govbiz_catalog
+        - name: SPRING_DATASOURCE_USERNAME
+          value: govbiz_catalog
+        - name: SUPPORT_PROGRAM_INDEX_ENABLED
+          value: 'false'
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: catalog-runtime
+              key: SPRING_DATASOURCE_PASSWORD
+        - name: CATALOG_INTERNAL_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: catalog-runtime
+              key: CATALOG_INTERNAL_TOKEN
+        - name: DATA_GO_KR_SERVICE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: catalog-runtime
+              key: DATA_GO_KR_SERVICE_KEY
+        - name: KSTARTUP_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: catalog-runtime
+              key: KSTARTUP_API_KEY
+        - name: MSIT_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: catalog-runtime
+              key: MSIT_API_KEY
+        - name: CNTRADE_NOTICE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: catalog-runtime
+              key: CNTRADE_NOTICE_API_KEY
+        resources:
+          limits:
+            cpu: '2'
+            memory: 1Gi
+          requests:
+            cpu: 100m
+            memory: 384Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        startupProbe:
+          httpGet:
+            path: /health
+            port: http
+            httpHeaders:
+            - name: Host
+              value: localhost
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 90
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+            httpHeaders:
+            - name: Host
+              value: localhost
+          periodSeconds: 15
+          timeoutSeconds: 3
+          failureThreshold: 5
+        readinessProbe:
+          httpGet:
+            path: /readiness
+            port: http
+            httpHeaders:
+            - name: Host
+              value: localhost
+          periodSeconds: 5
+          timeoutSeconds: 8
+          failureThreshold: 3
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir:
+          sizeLimit: 256Mi
+      nodeSelector:
+        govbiz.io/workload-pool: application
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: catalog-mysql
+            namespaces:
+            - govbiz-msa
+            topologyKey: kubernetes.io/hostname
