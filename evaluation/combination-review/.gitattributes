@@ -1,6 +1,0 @@
-# Preserve source bytes and fixture hashes on Windows and Linux.
-*.hwpx -text
-*.pdf -text
-*.json -text
-*.py text eol=lf
-*.md text eol=lf

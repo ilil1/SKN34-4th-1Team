@@ -1,7 +1,0 @@
-{
-  "status": "COMPLETED",
-  "sourceSha256": "69c0733389fa4aacbdf81be9f389f1f3e5679078f865d6958bf63595b782a062",
-  "model": "gpt-5.6-luna",
-  "maximumApiCalls": 1,
-  "apiCalls": 1
-}

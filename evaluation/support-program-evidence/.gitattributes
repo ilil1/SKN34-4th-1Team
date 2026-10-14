@@ -1,5 +1,0 @@
-# 도구·문서는 OS와 무관하게 LF를 사용한다.
-* text eol=lf
-# SHA-256은 실제 파일 바이트 기준이다. 입력과 실행 기록을 자동 변환하지 않는다.
-/*.json -text !eol
-runs/**/*.json -text !eol
