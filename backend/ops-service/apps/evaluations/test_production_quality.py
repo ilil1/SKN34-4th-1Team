@@ -142,7 +142,61 @@ class ProductionQualityValidationTests(SimpleTestCase):
                 self.assertNotIn(raw, redact(raw))
 
     def test_no_redaction_claim_for_ordinary_material(self):
-        self.assertFalse(validate_sample(sample_payload())["redacted"])
+        for changes in ({}, {"evidence_redacted": False}):
+            with self.subTest(changes=changes):
+                payload = sample_payload(**changes)
+                clean = validate_sample(payload)
+                self.assertFalse(clean["redacted"])
+                self.assertEqual(clean["payload_sha256"], digest(payload))
+                self.assertEqual(clean["material_sha256"], digest(payload["material"]))
+
+    def test_core_masked_evidence_preserves_redaction_hashes_and_citation_provenance(self):
+        payload = sample_payload(evidence_redacted=True)
+        payload["material"]["chunks"][0]["text"] = (
+            "서울 소재 기업이 신청할 수 있습니다. 문의처: [REDACTED], [REDACTED]"
+        )
+        before = deepcopy(payload)
+        clean = validate_sample(payload)
+        self.assertEqual(payload, before)
+        self.assertTrue(clean["redacted"])
+        self.assertEqual(clean["material"], before["material"])
+        self.assertEqual(clean["payload_sha256"], digest(payload))
+        self.assertEqual(clean["material_sha256"], digest(clean["material"]))
+        self.assertEqual(structural_checks(clean["material"]), [])
+
+    def test_core_flag_does_not_disable_ops_contact_redaction(self):
+        for flag in (False, True):
+            payload = sample_payload(evidence_redacted=flag)
+            payload["material"]["chunks"][0]["text"] = (
+                "AI·ICT 분야 국내기업. 문의처: 02-3460-7474, aiax@kotra.or.kr"
+            )
+            with self.subTest(flag=flag):
+                clean = validate_sample(payload)
+                self.assertTrue(clean["redacted"])
+                self.assertEqual(
+                    clean["material"]["chunks"][0]["text"],
+                    "AI·ICT 분야 국내기업. 문의처: [REDACTED], [REDACTED]",
+                )
+                self.assertEqual(clean["material_sha256"], digest(clean["material"]))
+
+    def test_evidence_redaction_flag_requires_a_boolean_at_the_payload_boundary(self):
+        for flag in (None, 0, 1, "true", "false", "", [], {}):
+            with (
+                self.subTest(flag=flag),
+                self.assertRaisesMessage(ProductionQualityError, "INVALID_EVIDENCE_REDACTION"),
+            ):
+                validate_sample(sample_payload(evidence_redacted=flag))
+        for section in ("material", "chunk"):
+            payload = sample_payload()
+            target = (
+                payload["material"] if section == "material" else payload["material"]["chunks"][0]
+            )
+            target["evidence_redacted"] = True
+            with (
+                self.subTest(section=section),
+                self.assertRaisesMessage(ProductionQualityError, "UNKNOWN_SAMPLE_FIELDS"),
+            ):
+                validate_sample(payload)
 
     def test_trace_link_only_uses_valid_configured_web_base(self):
         sample = ProductionQualitySample(**validate_sample(sample_payload()))
@@ -319,6 +373,35 @@ class ProductionQualityTests(ProductionQualityFixture, TestCase):
         sample = ProductionQualitySample.objects.get(pk=payload["id"])
         self.assertEqual(sample.checks_status, "pending")
         self.assertEqual(sample.review_version, 0)
+
+    def test_core_masked_sample_is_stored_checked_and_exposed_without_automatic_review(self):
+        payload = sample_payload(evidence_redacted=True)
+        payload["material"]["chunks"][0]["text"] = (
+            "서울 소재 기업이 신청할 수 있습니다. 문의처: [REDACTED], [REDACTED]"
+        )
+        sample, created = ingest_sample(payload)
+        self.assertTrue(created)
+        repeated, created = ingest_sample(payload)
+        self.assertFalse(created)
+        self.assertEqual(repeated.pk, sample.pk)
+        self.assertEqual(ProductionSampleDay.objects.get().accepted, 2)
+        self.assertEqual(process_pending_samples(), 2)
+        sample.refresh_from_db()
+        self.assertTrue(sample.redacted)
+        self.assertEqual(sample.payload_sha256, digest(payload))
+        self.assertEqual(sample.material_sha256, digest(sample.material))
+        self.assertEqual(sample.material, payload["material"])
+        response = self.client.get(f"{COLLECTION}/{sample.pk}")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["redacted"])
+        self.assertEqual(response.data["checks_status"], "checked")
+        self.assertEqual(response.data["check_codes"], [])
+        self.assertEqual(response.data["material"], payload["material"])
+        self.assertIsNone(response.data["review"])
+        self.assertEqual(response.data["review_version"], 0)
+        with self.assertRaisesMessage(ProductionQualityError, "SAMPLE_REQUEST_CONFLICT"):
+            ingest_sample({**payload, "evidence_redacted": False})
+        self.assertEqual(ProductionSampleDay.objects.get().accepted, 2)
 
     def test_daily_cap_counts_once_and_duplicates_work_at_cap(self):
         with self.settings(LLMOPS_PRODUCTION_SAMPLE_DAILY_LIMIT=1):

@@ -29,4 +29,5 @@ data class ProductionQualitySampleRequest(
     @get:JsonProperty("trace_id") val traceId: String?,
     val release: String?,
     val material: ProductionQualityMaterialRequest,
+    @get:JsonProperty("evidence_redacted") val evidenceRedacted: Boolean = false,
 )

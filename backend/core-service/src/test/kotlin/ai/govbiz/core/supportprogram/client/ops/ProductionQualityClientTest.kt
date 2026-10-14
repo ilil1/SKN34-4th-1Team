@@ -52,6 +52,7 @@ class ProductionQualityClientTest {
         assertEquals(chunk.documentId, body["source_document_id"].asText())
         assertEquals("b".repeat(32), body["trace_id"].asText())
         assertEquals("c".repeat(40), body["release"].asText())
+        assertFalse(body["evidence_redacted"].asBoolean())
         assertEquals(material.answerStatus, body["material"]["answer_status"].asText())
         assertEquals(chunk.documentId, body["material"]["chunks"][0]["document_id"].asText())
         assertEquals(chunk.id, body["material"]["citation_chunk_ids"][0].asText())
@@ -110,7 +111,7 @@ class ProductionQualityClientTest {
     }
 
     @Test
-    fun discardsSensitiveQuestionsAnswersAndEvidenceBeforeNetworkAccess() {
+    fun discardsSensitiveQuestionsAndAnswersBeforeNetworkAccess() {
         val http = mock(HttpClient::class.java)
         val client = ProductionQualityClient(properties(), mapper, http)
         val privateValues = listOf("owner@example.com", "010-1234-5678", "900101-1234567", "Bearer top-secret", "api_key=private")
@@ -118,10 +119,52 @@ class ProductionQualityClientTest {
             privateValues.forEach { private ->
                 client.record(material.copy(question = private), null)
                 client.record(material.copy(answer = private), null)
-                client.record(material.copy(chunks = listOf(chunk.copy(text = private))), null)
             }
             verifyNoInteractions(http)
-            assertEquals(privateValues.size * 3, logs.list.size)
+            assertEquals(privateValues.size * 2, logs.list.size)
+            assertTrue(logs.list.all { it.formattedMessage == "production_quality_sample_skipped reason=sensitive_content" })
+        }
+    }
+
+    @Test
+    fun masksEvidenceContactsBeforeTransmissionWithoutChangingTheAnswerOrCitationProvenance() {
+        val requests = mutableListOf<HttpRequest>()
+        val client = ProductionQualityClient(properties(), mapper, http(requests, CompletableFuture()))
+        val evidence = "AI·ICT분야 국내기업 지원. 문의처 02-3460-7474, aiax@kotra.or.kr"
+        val source = material.copy(chunks = listOf(chunk.copy(text = evidence), chunk.copy(id = "d".repeat(64), order = 1)))
+        withLogs { logs ->
+            client.record(source, null)
+            val sent = mapper.readTree(body(requests.single()))
+            assertTrue(sent["evidence_redacted"].asBoolean())
+            val collected = sent["material"]
+            assertEquals("AI·ICT분야 국내기업 지원. 문의처 [REDACTED], [REDACTED]", collected["chunks"][0]["text"].asText())
+            assertEquals(chunk.text, collected["chunks"][1]["text"].asText())
+            assertEquals(source.question, collected["question"].asText())
+            assertEquals(source.answer, collected["answer"].asText())
+            assertEquals(source.answerStatus, collected["answer_status"].asText())
+            assertEquals(chunk.id, collected["citation_chunk_ids"][0].asText())
+            source.chunks.forEachIndexed { index, original ->
+                assertEquals(original.id, collected["chunks"][index]["id"].asText())
+                assertEquals(original.documentId, collected["chunks"][index]["document_id"].asText())
+                assertEquals(original.order, collected["chunks"][index]["order"].asInt())
+            }
+            assertEquals(evidence, source.chunks[0].text)
+            assertFalse(sent.toString().contains("02-3460-7474") || sent.toString().contains("aiax@kotra.or.kr"))
+            assertTrue(logs.list.isEmpty())
+        }
+    }
+
+    @Test
+    fun discardsIdentityAndCredentialsInEvidenceBeforeMaskingContacts() {
+        val http = mock(HttpClient::class.java)
+        val client = ProductionQualityClient(properties(), mapper, http)
+        val blocked = listOf("900101-1234567", "Bearer owner@example.com", "api_key=010-1234-5678", "sk-abcdefghijklmnop")
+        withLogs { logs ->
+            blocked.forEach { private ->
+                client.record(material.copy(chunks = listOf(chunk, chunk.copy(id = "d".repeat(64), text = "문의 02-3460-7474 $private"))), null)
+            }
+            verifyNoInteractions(http)
+            assertEquals(blocked.size, logs.list.size)
             assertTrue(logs.list.all { it.formattedMessage == "production_quality_sample_skipped reason=sensitive_content" })
         }
     }

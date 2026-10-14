@@ -142,7 +142,11 @@ def validate_sample(payload):
             "release",
             "material",
         },
+        {"evidence_redacted"},
     )
+    evidence_redacted = payload.get("evidence_redacted", False)
+    if type(evidence_redacted) is not bool:
+        raise ProductionQualityError("INVALID_EVIDENCE_REDACTION")
     integer(payload["schema_version"], 1, 1)
     request_uuid(payload["id"])
     if payload["scope"] != SCOPE:
@@ -204,7 +208,7 @@ def validate_sample(payload):
         "payload_sha256": digest(payload),
         "material": clean,
         "material_sha256": digest(clean),
-        "redacted": clean != material,
+        "redacted": evidence_redacted or clean != material,
     }
 
 

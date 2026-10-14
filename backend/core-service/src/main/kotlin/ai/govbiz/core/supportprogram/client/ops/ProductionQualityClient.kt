@@ -27,8 +27,10 @@ class ProductionQualityClient(
         val endpoint = properties.endpoint ?: return
         val id = UUID.randomUUID()
         if (!selected(id)) return
-        // 탐지한 본문을 출력하거나 일부 문장을 바꾸지 않고 표본 전체를 제외한다.
-        if (sensitive(material.question) || sensitive(material.answer) || material.chunks.any { sensitive(it.text) }) {
+        // 질문·답변의 민감정보와 근거의 주민번호·인증정보는 마스킹 전에 제외한다.
+        if (sensitive(material.question) || sensitive(material.answer) ||
+            material.chunks.any { chunk -> BLOCKED_PATTERNS.any { it.containsMatchIn(chunk.text) } }
+        ) {
             logger.info("production_quality_sample_skipped reason=sensitive_content")
             return
         }
@@ -38,12 +40,17 @@ class ProductionQualityClient(
         }
         val startedAt = System.nanoTime()
         try {
+            // 공고 문의처 때문에 표본 전체가 누락되지 않도록 수집용 근거 사본만 마스킹한다.
+            val collectedMaterial = material.copy(chunks = material.chunks.map { chunk ->
+                chunk.copy(text = CONTACT_PATTERNS.fold(chunk.text) { text, pattern -> pattern.replace(text, "[REDACTED]") })
+            })
             val documentIds = material.chunks.map { it.documentId }.distinct()
             require(documentIds.size == 1)
             val payload = ProductionQualitySampleRequest(
                 id = id.toString(), capturedAt = Instant.now().toString(), sampleRateBps = properties.rateBps,
                 sourceDocumentId = documentIds.single(), traceId = traceId?.takeIf { TRACE_ID.matches(it) },
-                release = properties.release.takeIf { RELEASE.matches(it) }, material = material,
+                release = properties.release.takeIf { RELEASE.matches(it) }, material = collectedMaterial,
+                evidenceRedacted = collectedMaterial != material,
             )
             val body = mapper.writeValueAsBytes(payload)
             require(body.size <= 102_400)
@@ -83,7 +90,8 @@ class ProductionQualityClient(
     internal fun selected(id: UUID): Boolean =
         java.lang.Long.remainderUnsigned(id.leastSignificantBits, 10_000) < properties.rateBps
 
-    private fun sensitive(text: String): Boolean = SENSITIVE.any { it.containsMatchIn(text) }
+    private fun sensitive(text: String): Boolean =
+        CONTACT_PATTERNS.any { it.containsMatchIn(text) } || BLOCKED_PATTERNS.any { it.containsMatchIn(text) }
 
     override fun close() = httpClient.shutdown()
 
@@ -91,10 +99,12 @@ class ProductionQualityClient(
         private val logger = LoggerFactory.getLogger(ProductionQualityClient::class.java)
         private val TRACE_ID = Regex("[0-9a-f]{32}")
         private val RELEASE = Regex("[0-9a-f]{40}")
-        // 검출 가능한 연락처·주민번호·인증정보만 제외한다. 완전한 개인정보 탐지로 해석하지 않는다.
-        private val SENSITIVE = listOf(
+        // 고정 패턴 검사이며 완전한 개인정보 탐지로 해석하지 않는다.
+        private val CONTACT_PATTERNS = listOf(
             Regex("[A-Z0-9._%+\\-]+@[A-Z0-9.\\-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE),
             Regex("(?<![0-9])(?:0[0-9]{1,2}|\\+82[ \\-]?[0-9]{1,2})[ \\-]?[0-9]{3,4}[ \\-]?[0-9]{4}(?![0-9])"),
+        )
+        private val BLOCKED_PATTERNS = listOf(
             Regex("(?<![0-9])[0-9]{6}[ \\-]?[1-8][0-9]{6}(?![0-9])"),
             Regex("(?:Bearer\\s+\\S+|(?:api[_-]?key|password|secret|token)\\s*[:=]\\s*\\S+|sk-[A-Z0-9_-]{16,}|eyJ[A-Z0-9_-]+\\.[A-Z0-9_-]+\\.[A-Z0-9_-]+)", RegexOption.IGNORE_CASE),
         )
