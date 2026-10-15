@@ -1,2 +1,0 @@
-FROM docker.elastic.co/elasticsearch/elasticsearch:9.5.3@sha256:f456578fc2a620a8a4f4c21d070fff1f6070345adb2be5e5626b65be72aea350
-RUN bin/elasticsearch-plugin install --batch analysis-nori

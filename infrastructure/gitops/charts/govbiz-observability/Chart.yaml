@@ -1,6 +1,0 @@
-apiVersion: v2
-name: govbiz-observability
-description: Existing Langfuse services on separately restored Kubernetes volumes
-type: application
-version: 0.1.0
-appVersion: "4.46.0"
