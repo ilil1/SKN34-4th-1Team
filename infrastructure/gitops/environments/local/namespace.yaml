@@ -1,7 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: govbiz-local
-  labels:
-    app.kubernetes.io/part-of: govbiz
-    govbiz.io/environment: local
