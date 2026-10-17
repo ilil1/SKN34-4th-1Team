@@ -1,0 +1,38 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+replacements:
+- source:
+    fieldPath: metadata.annotations.govbiz\.io/langfuse-environment
+    kind: Deployment
+    name: core-service
+    namespace: govbiz-msa
+  targets:
+  - fieldPaths:
+    - spec.template.spec.containers.[name=core-service].env.[name=LANGFUSE_ENVIRONMENT].value
+    options:
+      create: true
+    select:
+      kind: Deployment
+      name: core-service
+      namespace: govbiz-msa
+- source:
+    fieldPath: metadata.annotations.govbiz\.io/langfuse-environment
+    kind: Deployment
+    name: ai-service
+    namespace: govbiz-msa
+  targets:
+  - fieldPaths:
+    - spec.template.spec.containers.[name=ai-service].env.[name=LANGFUSE_ENVIRONMENT].value
+    options:
+      create: true
+    select:
+      kind: Deployment
+      name: ai-service
+      namespace: govbiz-msa
+resources:
+- ai-service.yaml
+- catalog-service.yaml
+- core-service.yaml
+- ops-service.yaml
+- ops-artifacts.yaml
+- evaluation-runner.yaml

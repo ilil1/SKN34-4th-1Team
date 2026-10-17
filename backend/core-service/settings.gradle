@@ -1,9 +1,0 @@
-pluginManagement {
-    repositories {
-        // Resolve plugin dependencies directly instead of relying on the portal's Maven Central proxy.
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
-
-rootProject.name = 'govbiz-core-service'
